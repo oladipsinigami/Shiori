@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: shiori
+    runtime: node
+    buildCommand: npm install
+    startCommand: node server.js
+    plan: free
+    envVars:
+      - key: OPENROUTER_MODEL
+        value: openrouter/auto

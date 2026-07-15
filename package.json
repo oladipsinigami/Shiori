@@ -1,7 +1,13 @@
 {
-  "name": "shelfmate",
+  "name": "shiori",
   "version": "0.1.0",
-  "description": "OpenCode wrapper CLI for the Obito recommendation agent",
+  "description": "Shiori - AI Librarian Recommendation Agent",
   "private": true,
-  "main": "obito.js"
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.0"
+  }
 }
