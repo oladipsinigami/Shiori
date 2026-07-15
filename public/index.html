@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Shiori — AI Librarian on OKX.AI</title>
+  <meta name="description" content="Shiori is a live OKX.AI Agent Service Provider (#5001) for personalized movie, anime, and novel recommendations." />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="wrap">
+    <nav class="nav">
+      <div class="brand">
+        <div class="brand-mark">S</div>
+        <div>
+          Shiori
+          <div style="font-size:0.78rem;color:var(--muted);font-weight:500">OKX.AI ASP · Media Recommendations</div>
+        </div>
+      </div>
+      <div class="nav-links">
+        <a href="#use-okx">Use on OKX.AI</a>
+        <a href="#preview">Preview chat</a>
+        <a href="#a2a">A2A / API</a>
+        <a href="https://github.com/oladipsinigami/Shiori" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </nav>
+
+    <section class="hero">
+      <div class="card">
+        <div class="eyebrow"><span class="dot"></span> Live on OKX.AI · Agent #5001</div>
+        <h1>The librarian who knows your taste — and your real schedule.</h1>
+        <p class="lead">
+          Shiori is an Agent Service Provider on the OKX.AI marketplace.
+          New users try her the official way: <strong>your agent hires Shiori</strong> for 1–3 movie, anime, or novel picks with human-like reasons.
+        </p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="https://www.okx.com" target="_blank" rel="noopener" id="okx-cta">
+            Open OKX.AI / OKX Wallet
+          </a>
+          <a class="btn btn-secondary" href="#use-okx">How to hire Shiori</a>
+          <a class="btn btn-ghost" href="#preview">Quick preview (same brain)</a>
+        </div>
+        <div class="meta">
+          <div class="meta-row"><span>Agent</span><span>Shiori · #5001</span></div>
+          <div class="meta-row"><span>Service</span><span>Media Recommendations · 0 USDT</span></div>
+          <div class="meta-row"><span>Backend</span><span id="health-status">checking…</span></div>
+          <div class="meta-row"><span>Wallet</span><span class="mono" style="font-size:0.78rem">0xa2fb…f33c</span></div>
+        </div>
+      </div>
+
+      <div class="card" id="use-okx">
+        <h2 class="panel-title">Use Shiori on OKX.AI</h2>
+        <p class="panel-sub">This is the publication path. Share these steps in your video and posts.</p>
+        <div class="steps">
+          <div class="step">
+            <div>
+              <strong>Open your OKX Agentic Wallet / agent</strong>
+              <p>OKX.AI is agent-to-agent. You talk to <em>your</em> agent first.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div>
+              <strong>Find Shiori in the marketplace</strong>
+              <p>Search <strong>Shiori</strong>, ASP <strong>#5001</strong>, or “Media Recommendations”.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div>
+              <strong>Paste a hire prompt</strong>
+              <p>Copy a prompt below and send it to your agent so it hires Shiori.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div>
+              <strong>Accept delivery &amp; give feedback</strong>
+              <p>Tell Shiori what landed. Her taste profile improves every turn.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid-2">
+      <div class="card">
+        <h2 class="panel-title">Copy-paste hire prompts</h2>
+        <p class="panel-sub">Give these to <strong>your</strong> OKX agent so it can hire Shiori.</p>
+
+        <div class="prompt-box" id="prompt-1">
+          <button class="copy-btn" type="button" data-copy="prompt-1">Copy</button>
+Hire Shiori (ASP #5001, Media Recommendations) on OKX.AI.
+
+I like cozy anime and slow-burn novels.
+I have about 90 minutes tonight and low energy — nothing too dark.
+Recommend 1–3 things and explain why each fits me.
+        </div>
+
+        <div class="prompt-box" style="margin-top:0.75rem" id="prompt-2">
+          <button class="copy-btn" type="button" data-copy="prompt-2">Copy</button>
+Find the ASP named Shiori for media recommendations (0 USDT).
+
+Favorites: Your Name, Before Sunrise, and quiet character-driven stories.
+Tonight I finish work at 8pm and should sleep by 11.
+Suggest a realistic watch/read plan plus 1–3 titles.
+        </div>
+      </div>
+
+      <div class="card chat" id="preview">
+        <h2 class="panel-title">
+          Preview chat
+          <span class="badge">optional · same Shiori brain</span>
+        </h2>
+        <p class="panel-sub">
+          Direct chat for demos when wallet setup is slow. Official product path is still OKX.AI hire.
+        </p>
+        <div class="chat-log" id="chat-log" aria-live="polite"></div>
+        <form class="chat-form" id="chat-form">
+          <textarea id="chat-input" rows="2" placeholder="e.g. Cozy anime, 90 minutes, tired after work…" required></textarea>
+          <button type="submit" id="chat-send">Send</button>
+        </form>
+        <p class="note">POST /chat · taste memory uses a browser session id · free Render may cold-start ~30–60s</p>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top:1.25rem" id="a2a">
+      <h2 class="panel-title">A2A / A2MCP HTTP surface</h2>
+      <p class="panel-sub">
+        Native OKX A2A still runs through the <code>okx-a2a</code> XMTP daemon (use
+        <code>scripts/start-a2a-daemon.ps1</code> with the Claude shim so jobs hit this brain).
+        These HTTP endpoints make Shiori callable by agents and tools today.
+      </p>
+      <div class="endpoints">
+        <div>GET  /.well-known/agent.json     → agent card</div>
+        <div>POST /a2a/tasks                 → { "message": "...", "userId": "..." }</div>
+        <div>POST /a2a  (JSON-RPC)           → method "message/send"</div>
+        <div>GET  /a2mcp/tools               → tool list</div>
+        <div>POST /a2mcp/invoke              → A2MCP-style tool call</div>
+        <div>POST /chat                      → simple chat API</div>
+        <div>GET  /health                    → liveness</div>
+      </div>
+    </section>
+
+    <p class="footer">
+      Shiori · OKX.AI Genesis Hackathon · #OKXAI ·
+      <a href="https://shiori-h45s.onrender.com">shiori-h45s.onrender.com</a>
+    </p>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>
