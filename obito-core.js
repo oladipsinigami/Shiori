@@ -115,7 +115,7 @@ async function runObito(userId, userMessage) {
   }
   const fullMessage = `${context} ${userMessage}`;
 
-  const model = process.env.OPENROUTER_MODEL || 'openrouter/fusion';
+  const model = process.env.OPENROUTER_MODEL || 'openrouter/auto';
   const url = 'https://openrouter.ai/api/v1/chat/completions';
 
   const response = await fetch(url, {
