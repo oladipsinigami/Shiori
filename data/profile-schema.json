@@ -1,0 +1,115 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ShelfmateUserProfile",
+  "description": "Structured taste + context profile that the Obito recommendation agent reasons over. Owned and persisted by the wrapper app, not by the agent itself.",
+  "type": "object",
+  "required": ["user_id", "profile_status", "schedule", "taste", "feedback_log"],
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "description": "Stable identifier for this user (wallet address, session id, or app-level user id)."
+    },
+    "profile_status": {
+      "type": "string",
+      "enum": ["empty", "partial", "established"],
+      "description": "empty = no data yet, run onboarding. partial = some signal, keep light onboarding questions mixed in. established = confident recommendations, skip onboarding."
+    },
+    "schedule": {
+      "type": "object",
+      "properties": {
+        "schedule_type": {
+          "type": "string",
+          "enum": ["student", "worker", "night_shift", "freelancer_variable", "other"]
+        },
+        "daily_rhythm": {
+          "type": "string",
+          "description": "Free text summary, e.g. 'classes 8am-7pm weekdays, free evenings'."
+        },
+        "known_good_windows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": { "type": "string", "description": "e.g. 'weeknight wind-down'" },
+              "start": { "type": "string", "description": "HH:MM local time" },
+              "end": { "type": "string", "description": "HH:MM local time" },
+              "typical_energy": { "type": "string", "enum": ["low", "medium", "high"] }
+            }
+          }
+        }
+      }
+    },
+    "taste": {
+      "type": "object",
+      "properties": {
+        "genre_affinities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["genre", "strength"],
+            "properties": {
+              "genre": { "type": "string" },
+              "strength": { "type": "string", "enum": ["high", "medium", "low", "avoid"] },
+              "note": { "type": "string" }
+            }
+          }
+        },
+        "tone_preferences": {
+          "type": "object",
+          "properties": {
+            "pacing": { "type": "string", "enum": ["slow-burn", "fast-paced", "mixed", "unknown"] },
+            "mood": { "type": "string", "enum": ["dark", "lighthearted", "mixed", "unknown"] },
+            "depth": { "type": "string", "enum": ["emotional", "comfort", "mixed", "unknown"] }
+          }
+        },
+        "anchor_favorites": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": { "type": "string" },
+              "format": { "type": "string", "enum": ["movie", "anime", "novel"] },
+              "reason": { "type": "string" }
+            }
+          }
+        },
+        "known_dislikes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": { "type": "string" },
+              "format": { "type": "string", "enum": ["movie", "anime", "novel"] },
+              "reason": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "feedback_log": {
+      "type": "array",
+      "description": "Append-only log. Each entry ties back to a rec_id emitted by the agent.",
+      "items": {
+        "type": "object",
+        "required": ["rec_id", "title", "format", "reaction", "timestamp"],
+        "properties": {
+          "rec_id": { "type": "string", "description": "Matches the rec_id the agent tagged on the recommendation." },
+          "title": { "type": "string" },
+          "format": { "type": "string", "enum": ["movie", "anime", "novel"] },
+          "reaction": { "type": "string", "enum": ["loved", "liked", "mixed", "disliked", "not_started"] },
+          "reason": { "type": "string", "description": "Why, in the user's own words or agent-summarized." },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "today_context": {
+      "type": "object",
+      "description": "Optional, short-lived, not persisted long-term unless useful.",
+      "properties": {
+        "energy_level": { "type": "string", "enum": ["low", "medium", "high", "unknown"] },
+        "available_window": { "type": "string", "description": "Free text, e.g. '9:00-10:30pm'" },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}

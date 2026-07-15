@@ -1,0 +1,7 @@
+{
+  "name": "shelfmate",
+  "version": "0.1.0",
+  "description": "OpenCode wrapper CLI for the Obito recommendation agent",
+  "private": true,
+  "main": "obito.js"
+}
