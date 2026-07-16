@@ -115,7 +115,12 @@
       return;
     }
 
-    await switchToXLayer();
+    addBubble('system', 'Switching MetaMask to XLayer network...');
+    const onXLayer = await switchToXLayer();
+    if (!onXLayer) {
+      addBubble('system', 'Please switch to XLayer network in MetaMask manually and try again.');
+      return;
+    }
 
     const token = '0x1a7e4e63778B4f12a199C063f9831aE1c13e0f8E';
     const payTo = '0xa2fbc18fd6306d84566f85edd6912fc8f91af33c';
