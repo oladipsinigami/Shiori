@@ -1,0 +1,14 @@
+# Railway always-on worker for Shiori A2A support.
+# Primary product (landing + /chat) stays on Render.
+# This service: keep-alive pings + optional okx-a2a daemon.
+
+[build]
+builder = "NIXPACKS"
+buildCommand = "npm install && npm install @okxweb3/a2a-node@latest --no-save || true"
+
+[deploy]
+startCommand = "node scripts/railway-a2a-worker.js"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
