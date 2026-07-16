@@ -1,249 +1,152 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Shiori — AI Librarian</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d0d0d; color: #e0e0e0; min-height: 100vh; display: flex; flex-direction: column; }
-  header { background: #1a1a2e; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #2a2a4a; }
-  header h1 { font-size: 20px; color: #c084fc; }
-  header h1 span { color: #94a3b8; font-size: 14px; }
-  #wallet { background: #2a2a4a; border: none; color: #e0e0e0; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px; }
-  #wallet:hover { background: #3a3a5a; }
-  #wallet.connected { background: #065f46; }
-  .main { flex: 1; display: flex; flex-direction: column; max-width: 720px; width: 100%; margin: 0 auto; padding: 16px; }
-  #messages { flex: 1; overflow-y: auto; padding: 12px 0; display: flex; flex-direction: column; gap: 12px; min-height: 400px; }
-  .msg { max-width: 85%; padding: 10px 14px; border-radius: 12px; line-height: 1.5; font-size: 14px; white-space: pre-wrap; }
-  .msg.user { align-self: flex-end; background: #2563eb; color: white; }
-  .msg.shiori { align-self: flex-start; background: #1e293b; color: #e0e0e0; }
-  .msg.system { align-self: center; background: #2d1b4e; color: #c084fc; font-size: 13px; text-align: center; }
-  .msg.payment { align-self: center; background: #1e3a5f; color: #93c5fd; font-size: 13px; text-align: center; cursor: pointer; border: 1px solid #3b82f6; }
-  .msg.payment:hover { background: #1e4a7f; }
-  .input-row { display: flex; gap: 8px; padding: 12px 0; }
-  .input-row input { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #333; background: #1a1a2e; color: #e0e0e0; font-size: 14px; outline: none; }
-  .input-row input:focus { border-color: #c084fc; }
-  .input-row button { padding: 12px 24px; border-radius: 8px; border: none; background: #c084fc; color: #0d0d0d; font-weight: 600; cursor: pointer; font-size: 14px; }
-  .input-row button:disabled { opacity: 0.5; cursor: not-allowed; }
-  .badge { text-align: center; font-size: 12px; color: #64748b; padding: 8px; }
-  .badge a { color: #c084fc; }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Shiori — AI Librarian on OKX.AI</title>
+  <meta name="description" content="Shiori is a live OKX.AI Agent Service Provider (#5001) for personalized movie, anime, and novel recommendations." />
+  <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-<header>
-  <h1>Shiori <span>— AI Librarian</span></h1>
-  <button id="wallet" onclick="connectWallet()">Connect Wallet</button>
-</header>
-<div class="main">
-  <div id="messages">
-    <div class="msg shiori">Hello! I'm Shiori, your AI librarian. Tell me about your favorite stories, your current mood, and how much time you have — I'll recommend 1–3 movies, anime, or novels just for you.</div>
+  <div class="wrap">
+    <nav class="nav">
+      <div class="brand">
+        <div class="brand-mark">S</div>
+        <div>
+          Shiori
+          <div style="font-size:0.78rem;color:var(--muted);font-weight:500">OKX.AI ASP · Media Recommendations</div>
+        </div>
+      </div>
+      <div class="nav-links">
+        <a href="#use-okx">Use on OKX.AI</a>
+        <a href="#preview">Preview chat</a>
+        <a href="#a2a">A2A / API</a>
+        <button id="wallet-btn" class="btn-wallet" onclick="window.connectWallet()">Connect Wallet</button>
+        <a href="https://github.com/oladipsinigami/Shiori" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </nav>
+
+    <section class="hero">
+      <div class="card">
+        <div class="eyebrow"><span class="dot"></span> Live on OKX.AI · Agent #5001</div>
+        <h1>The librarian who knows your taste — and your real schedule.</h1>
+        <p class="lead">
+          Shiori is an Agent Service Provider on the OKX.AI marketplace.
+          New users try her the official way: <strong>your agent hires Shiori</strong> for 1–3 movie, anime, or novel picks with human-like reasons.
+        </p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="https://www.okx.com" target="_blank" rel="noopener" id="okx-cta">
+            Open OKX.AI / OKX Wallet
+          </a>
+          <a class="btn btn-secondary" href="#use-okx">How to hire Shiori</a>
+          <a class="btn btn-ghost" href="#preview">Quick preview (same brain)</a>
+        </div>
+        <div class="meta">
+          <div class="meta-row"><span>Agent</span><span>Shiori · #5001</span></div>
+          <div class="meta-row"><span>Service</span><span>Media Recommendations · 0.001 USDT/req</span></div>
+          <div class="meta-row"><span>Backend</span><span id="health-status">checking…</span></div>
+          <div class="meta-row"><span>Wallet</span><span class="mono" style="font-size:0.78rem">0xa2fb…f33c</span></div>
+          <div class="meta-row" id="wallet-row" style="display:none"><span>Connected</span><span id="wallet-addr" class="mono" style="font-size:0.78rem"></span></div>
+        </div>
+      </div>
+
+      <div class="card" id="use-okx">
+        <h2 class="panel-title">Use Shiori on OKX.AI</h2>
+        <p class="panel-sub">This is the publication path. Share these steps in your video and posts.</p>
+        <div class="steps">
+          <div class="step">
+            <div>
+              <strong>Open your OKX Agentic Wallet / agent</strong>
+              <p>OKX.AI is agent-to-agent. You talk to <em>your</em> agent first.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div>
+              <strong>Find Shiori in the marketplace</strong>
+              <p>Search <strong>Shiori</strong>, ASP <strong>#5001</strong>, or “Media Recommendations”.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div>
+              <strong>Paste a hire prompt</strong>
+              <p>Copy a prompt below and send it to your agent so it hires Shiori.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div>
+              <strong>Accept delivery &amp; give feedback</strong>
+              <p>Tell Shiori what landed. Her taste profile improves every turn.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid-2">
+      <div class="card">
+        <h2 class="panel-title">Copy-paste hire prompts</h2>
+        <p class="panel-sub">Give these to <strong>your</strong> OKX agent so it can hire Shiori.</p>
+
+        <div class="prompt-box" id="prompt-1">
+          <button class="copy-btn" type="button" data-copy="prompt-1">Copy</button>
+Hire Shiori (ASP #5001, Media Recommendations) on OKX.AI.
+
+I like cozy anime and slow-burn novels.
+I have about 90 minutes tonight and low energy — nothing too dark.
+Recommend 1–3 things and explain why each fits me.
+        </div>
+
+        <div class="prompt-box" style="margin-top:0.75rem" id="prompt-2">
+          <button class="copy-btn" type="button" data-copy="prompt-2">Copy</button>
+Find the ASP named Shiori for media recommendations (0.001 USDT per request).
+
+Favorites: Your Name, Before Sunrise, and quiet character-driven stories.
+Tonight I finish work at 8pm and should sleep by 11.
+Suggest a realistic watch/read plan plus 1–3 titles.
+        </div>
+      </div>
+
+      <div class="card chat" id="preview">
+        <h2 class="panel-title">
+          Preview chat
+          <span class="badge">0.001 USDT via x402</span>
+        </h2>
+        <p class="panel-sub">
+          Connect your wallet to pay 0.001 USDT per request. Payment is verified on XLayer.
+        </p>
+        <div class="chat-log" id="chat-log" aria-live="polite"></div>
+        <form class="chat-form" id="chat-form">
+          <textarea id="chat-input" rows="2" placeholder="e.g. Cozy anime, 90 minutes, tired after work…" required></textarea>
+          <button type="submit" id="chat-send">Send</button>
+        </form>
+        <p class="note" id="payment-note">Connect wallet above, then send a message. You'll be prompted to pay 0.001 USDT on XLayer.</p>
+        <p class="note" style="margin-top:0">POST /chat · taste memory uses browser session id · Render cold-start ~30–60s</p>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top:1.25rem" id="a2a">
+      <h2 class="panel-title">A2A / A2MCP HTTP surface</h2>
+      <p class="panel-sub">
+        Native OKX A2A still runs through the <code>okx-a2a</code> XMTP daemon (use
+        <code>scripts/start-a2a-daemon.ps1</code> with the Claude shim so jobs hit this brain).
+        These HTTP endpoints make Shiori callable by agents and tools today.
+      </p>
+      <div class="endpoints">
+        <div>GET  /.well-known/agent.json     → agent card</div>
+        <div>POST /a2a/tasks                 → { "message": "...", "userId": "..." }</div>
+        <div>POST /a2a  (JSON-RPC)           → method "message/send"</div>
+        <div>GET  /a2mcp/tools               → tool list</div>
+        <div>POST /a2mcp/invoke              → A2MCP-style tool call</div>
+        <div>POST /chat                      → simple chat API</div>
+        <div>GET  /health                    → liveness</div>
+      </div>
+    </section>
+
+    <p class="footer">
+      Shiori · OKX.AI Genesis Hackathon · #OKXAI ·
+      <a href="https://shiori-h45s.onrender.com">shiori-h45s.onrender.com</a>
+    </p>
   </div>
-  <div class="input-row">
-    <input id="input" type="text" placeholder="Tell me what you're in the mood for..." onkeydown="if(event.key==='Enter') send()" />
-    <button id="sendBtn" onclick="send()">Send</button>
-  </div>
-  <div class="badge">Powered by <a href="https://web3.okx.com" target="_blank">OKX AI</a> · ASP #5001 · 0.001 USDT per request</div>
-</div>
-<script>
-const API = window.location.origin;
-let walletAddress = null;
-let pendingMessage = null;
-
-async function connectWallet() {
-  if (!window.ethereum) {
-    alert('Please install MetaMask to use this app.');
-    return;
-  }
-  try {
-    const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
-    walletAddress = accounts[0];
-    document.getElementById('wallet').textContent = walletAddress.slice(0,6)+'...'+walletAddress.slice(-4);
-    document.getElementById('wallet').classList.add('connected');
-    addMsg('system', `Wallet connected: ${walletAddress}`);
-  } catch (e) {
-    addMsg('system', 'Wallet connection cancelled.');
-  }
-}
-
-async function switchToXLayer() {
-  if (!window.ethereum) return false;
-  try {
-    await ethereum.request({
-      method: 'wallet_switchEthereumChain',
-      params: [{ chainId: '0xc4' }], // 196 in hex
-    });
-    return true;
-  } catch (e) {
-    if (e.code === 4902) {
-      try {
-        await ethereum.request({
-          method: 'wallet_addEthereumChain',
-          params: [{
-            chainId: '0xc4',
-            chainName: 'XLayer',
-            nativeCurrency: { name: 'OKB', symbol: 'OKB', decimals: 18 },
-            rpcUrls: ['https://xlayerrpc.okx.com'],
-            blockExplorerUrls: ['https://www.okx.com/explorer/xlayer'],
-          }],
-        });
-        return true;
-      } catch { return false; }
-    }
-    return false;
-  }
-}
-
-function addMsg(type, text) {
-  const div = document.createElement('div');
-  div.className = 'msg ' + type;
-  div.textContent = text;
-  document.getElementById('messages').appendChild(div);
-  div.scrollIntoView({ behavior: 'smooth' });
-}
-
-function addPaymentMsg(text, onClick) {
-  const div = document.createElement('div');
-  div.className = 'msg payment';
-  div.textContent = text;
-  div.onclick = onClick;
-  document.getElementById('messages').appendChild(div);
-  div.scrollIntoView({ behavior: 'smooth' });
-}
-
-async function send() {
-  const input = document.getElementById('input');
-  const msg = input.value.trim();
-  if (!msg) return;
-
-  if (!walletAddress) {
-    addMsg('system', 'Please connect your wallet first.');
-    return;
-  }
-
-  input.value = '';
-  document.getElementById('sendBtn').disabled = true;
-  addMsg('user', msg);
-
-  await doSend(msg);
-  document.getElementById('sendBtn').disabled = false;
-}
-
-async function doSend(message, xPaymentHeader) {
-  const headers = { 'Content-Type': 'application/json' };
-  if (xPaymentHeader) {
-    headers['x-payment'] = xPaymentHeader;
-  }
-
-  try {
-    const res = await fetch(API + '/chat', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ userId: walletAddress.toLowerCase(), message }),
-    });
-
-    if (res.status === 402) {
-      const data = await res.json();
-      await handlePayment(data.payment, message);
-      return;
-    }
-
-    if (!res.ok) {
-      const data = await res.json();
-      addMsg('system', 'Error: ' + (data.error || res.statusText));
-      return;
-    }
-
-    const data = await res.json();
-    addMsg('shiori', data.response);
-  } catch (e) {
-    addMsg('system', 'Network error: ' + e.message);
-  }
-}
-
-async function handlePayment(paymentInfo, originalMessage) {
-  const accepts = paymentInfo?.accepts || [];
-  if (accepts.length === 0) {
-    addMsg('system', 'Payment required but no payment methods available.');
-    return;
-  }
-
-  const option = accepts[0];
-  const payTo = option.payTo;
-  const amount = option.amount;
-  const token = option.asset;
-
-  addPaymentMsg(
-    `💳 Pay ${FEE_HUMAN} USDT to use Shiori — click to pay`,
-    async () => {
-      await processPayment(payTo, amount, token, originalMessage);
-    }
-  );
-}
-
-async function processPayment(payTo, amount, token, originalMessage) {
-  if (!window.ethereum) {
-    addMsg('system', 'MetaMask not detected.');
-    return;
-  }
-
-  await switchToXLayer();
-
-  const tokenAbi = [{
-    constant: false,
-    inputs: [{ name: 'to', type: 'address' }, { name: 'value', type: 'uint256' }],
-    name: 'transfer',
-    outputs: [{ name: '', type: 'bool' }],
-    type: 'function',
-  }];
-
-  try {
-    addMsg('system', 'Sending 0.001 USDT to Shiori...');
-
-    const txHash = await ethereum.request({
-      method: 'eth_sendTransaction',
-      params: [{
-        from: walletAddress,
-        to: token,
-        data: '0xa9059cbb' + // transfer function selector
-          payTo.slice(2).padStart(64, '0') +
-          BigInt(amount).toString(16).padStart(64, '0'),
-      }],
-    });
-
-    addMsg('system', `Transaction submitted: ${txHash.slice(0,10)}... Waiting for confirmation...`);
-
-    await waitForTx(txHash);
-
-    addMsg('system', `Payment confirmed! Getting your recommendations...`);
-
-    const paymentHeader = btoa(JSON.stringify({ txHash, payer: walletAddress }));
-    await doSend(originalMessage, paymentHeader);
-  } catch (e) {
-    addMsg('system', 'Payment failed: ' + (e.message || 'User rejected'));
-  }
-}
-
-function waitForTx(txHash) {
-  return new Promise((resolve, reject) => {
-    const check = async () => {
-      try {
-        const receipt = await ethereum.request({
-          method: 'eth_getTransactionReceipt',
-          params: [txHash],
-        });
-        if (receipt && receipt.blockNumber) {
-          resolve(receipt);
-        } else {
-          setTimeout(check, 2000);
-        }
-      } catch {
-        setTimeout(check, 2000);
-      }
-    };
-    check();
-  });
-}
-</script>
+  <script src="/app.js"></script>
 </body>
 </html>

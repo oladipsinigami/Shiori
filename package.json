@@ -1,11 +1,15 @@
 {
   "name": "shiori",
-  "version": "0.1.0",
-  "description": "Shiori - AI Librarian Recommendation Agent",
+  "version": "0.2.0",
+  "description": "Shiori - AI Librarian Recommendation Agent (OKX.AI ASP)",
   "private": true,
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "a2a:shim": "node scripts/shiori-claude-shim.js"
+  },
+  "engines": {
+    "node": ">=22"
   },
   "dependencies": {
     "dotenv": "^16.4.0"

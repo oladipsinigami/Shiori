@@ -2,9 +2,20 @@ services:
   - type: web
     name: shiori
     runtime: node
+    plan: free
+    region: oregon
     buildCommand: npm install
     startCommand: node server.js
-    plan: free
+    healthCheckPath: /health
     envVars:
+      - key: NODE_VERSION
+        value: "22"
       - key: OPENROUTER_MODEL
         value: openrouter/auto
+      - key: PUBLIC_BASE_URL
+        value: https://shiori-h45s.onrender.com
+      - key: OKX_AGENT_ID
+        value: "5001"
+      # Set this in the Render Dashboard (Environment) — never commit the real key
+      - key: OPENROUTER_API_KEY
+        sync: false
