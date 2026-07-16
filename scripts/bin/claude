@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Fake Claude CLI for okx-a2a — routes all calls to Shiori via the Node shim.
+DIR="$(cd "$(dirname "$0")" && pwd)"
+export SHIORI_URL="${SHIORI_URL:-https://shiori-h45s.onrender.com}"
+exec node "$DIR/../shiori-claude-shim.js" "$@"

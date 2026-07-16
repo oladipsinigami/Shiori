@@ -1,14 +1,13 @@
-# Railway always-on worker for Shiori A2A support.
-# Primary product (landing + /chat) stays on Render.
-# This service: keep-alive pings + optional okx-a2a daemon.
+# Always-on OKX A2A worker — keeps Shiori marketplace status ONLINE.
+# Uses Dockerfile (onchainos + okx-a2a + Node 22).
 
 [build]
-builder = "NIXPACKS"
-buildCommand = "npm install && npm install @okxweb3/a2a-node@latest --no-save || true"
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 startCommand = "node scripts/railway-a2a-worker.js"
 healthcheckPath = "/health"
-healthcheckTimeout = 30
+healthcheckTimeout = 120
 restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 10
+restartPolicyMaxRetries = 20
