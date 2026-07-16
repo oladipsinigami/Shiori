@@ -35,6 +35,8 @@ function sendJson(res, status, body, extraHeaders) {
   const headers = {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-payment, x-payment-address',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     ...extraHeaders,
   };
   res.writeHead(status, headers);
@@ -115,6 +117,16 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (req.method === 'GET' && pathname === '/debug') {
+      return sendJson(res, 200, {
+        hasOpenRouterKey: !!process.env.OPENROUTER_API_KEY,
+        hasModel: !!process.env.OPENROUTER_MODEL,
+        publicUrl: PUBLIC_BASE_URL,
+        xlayerRpc: (process.env.XLAYER_RPC || 'https://xlayerrpc.okx.com').replace(/^https?:\/\//, '...'),
+        nodeVersion: process.version,
+      });
+    }
+
     if (req.method === 'GET' && pathname === '/payment-info') {
       return sendJson(res, 200, {
         payTo: SHIORI_WALLET,
@@ -169,8 +181,13 @@ const server = http.createServer(async (req, res) => {
       if (!userId || !message) {
         return sendJson(res, 400, { error: 'Both "userId" and "message" are required' });
       }
-      const { text, recIds } = await runObito(userId, message);
-      return sendJson(res, 200, { response: text, recIds });
+      try {
+        const { text, recIds } = await runObito(userId, message);
+        return sendJson(res, 200, { response: text, recIds });
+      } catch (err) {
+        console.error('/chat LLM error:', err.message, err.stack);
+        return sendJson(res, 500, { error: err.message || 'LLM call failed' });
+      }
     }
 
     if (req.method === 'POST' && (pathname === '/a2a/tasks' || pathname === '/a2a/message')) {
@@ -256,9 +273,10 @@ const server = http.createServer(async (req, res) => {
     });
   } catch (err) {
     console.error('Request error:', err.message);
+    console.error('Stack:', err.stack);
     const status = err.status || 500;
     return sendJson(res, status, {
-      error: status === 500 ? 'Internal error generating response' : err.message
+      error: err.message || 'Internal error'
     });
   }
 });
