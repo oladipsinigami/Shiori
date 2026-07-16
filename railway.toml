@@ -1,0 +1,13 @@
+# Always-on OKX A2A worker — keeps Shiori marketplace status ONLINE.
+# Uses Dockerfile (onchainos + okx-a2a + Node 22).
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "node scripts/railway-a2a-worker.js"
+healthcheckPath = "/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 20

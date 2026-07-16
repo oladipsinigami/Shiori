@@ -1,0 +1,10 @@
+node_modules
+.git
+logs
+data/profiles
+.env
+*.md
+scripts/_inspect*
+scripts/railway-*.js
+!scripts/railway-a2a-worker.js
+!scripts/bootstrap-identity.js
