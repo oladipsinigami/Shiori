@@ -11,56 +11,46 @@
 | Item | Detail |
 |---|---|
 | **Working Directory** | `C:\Users\oladips\Downloads\Obito` |
-| **Runtime** | Node.js v22 |
+| **Runtime** | Node.js v22.23.1 |
 | **LLM Provider** | OpenRouter (`openrouter/auto`) |
-| **API Key** | OpenRouter (sk-or-v1-...) |
+| **API Key** | OpenRouter |
+| **Hosting** | Render (free tier — `shiori-h45s.onrender.com`) |
 | **Code** | GitHub: `github.com/oladipsinigami/Shiori` |
+| **Agent ID** | #5001 |
+| **Owner Wallet** | `0xa2fbc18fd6306d84566f85edd6912fc8f91af33c` |
 
 ### Key Files
 
 | File | Purpose |
 |---|---|
 | `obito.md` | System prompt / agent personality definition |
-| `obito-core.js` | Core logic: LLM calls (Gemini → migrated to OpenRouter), profile storage, recommendation logging |
-| `server.js` | HTTP server — serves the agent via `POST /chat` and `GET /health` |
-| `obito.js` | CLI wrapper for local testing |
+| `obito-core.js` | Core logic: LLM calls (OpenRouter), profile storage, recommendation logging |
+| `server.js` | HTTP server — `/chat` (A2MCP with x402), static frontend, A2A/A2MCP routes |
+| `x402.js` | x402 payment challenge generation + on-chain USDT transfer verification |
+| `a2a.js` | A2A/A2MCP card, JSON-RPC, REST task handlers |
+| `public/index.html` | Landing page with wallet connect + chat UI |
+| `public/app.js` | Frontend logic: MetaMask wallet, x402 payment, chat bubble |
+| `public/styles.css` | Frontend styling |
+| `render.yaml` | Render Blueprint configuration |
 | `package.json` | Node.js project config |
-| `render.yaml` | Render Blueprint for deployment |
-
-### Migrations Made
-
-- **Gemini → OpenRouter**: Switched API provider to support more models (Claude, GPT, Grok, etc.)
-- **GEMINI_API_KEY → OPENROUTER_API_KEY**: Environment variable renamed
-- **Model configurable via `OPENROUTER_MODEL`** env var
 
 ---
 
-## 2. Oracle Cloud VM Deployment (Previous — Instance Down)
+## 2. Hosting — Render
 
 | Item | Detail |
 |---|---|
-| **Provider** | Oracle Cloud Free Tier |
-| **Instance** | Ampere A1 (ARM64, 4 OCPU, 24GB RAM) |
-| **OS** | Oracle Linux 9.7 |
-| **IP** | `145.241.103.250` (VM unreachable) |
-| **Process Manager** | PM2 v7 |
+| **Platform** | Render (free tier) |
+| **URL** | `https://shiori-h45s.onrender.com` |
+| **Region** | Oregon |
+| **Node Version** | v22 (via `NODE_VERSION` env) |
+| **Plan** | Free (spins down after 15 min idle) |
+| **Health Check** | `/health` |
+| **Auto-deploy** | From `origin/master` |
 
-### Services Running via PM2
-
-| Service | Status |
-|---|---|
-| `obito` (HTTP server) | Online (88m uptime at last check) |
-| `okx-a2a` (A2A daemon) | Running (pid 119092) |
-
-### Installed Tools
-
-| Tool | Version |
-|---|---|
-| Node.js | v22.23.1 |
-| OnchainOS CLI | v3.21.6-beta (from GitHub releases) |
-| okx-a2a | v0.1.7 |
-| OpenClaw CLI | 2026.6.11 |
-| PM2 | v7.0.3 |
+### Limitations
+- Free tier spins down after 15 min of inactivity; first request triggers a cold start (~5–30s)
+- Consider UptimeRobot or cron-job.org to keep warm during review
 
 ---
 
@@ -72,115 +62,105 @@
 | **Agent ID** | #5001 |
 | **Role** | Agent Service Provider (ASP) |
 | **Wallet Address** | `0xa2fbc18fd6306d84566f85edd6912fc8f91af33c` |
-| **Avatar** | Uploaded to OKX CDN |
-| **Service** | "Media Recommendations" (A2A, 0 USDT) |
-| **Status** | **Live on OKX.AI** |
-| **Approval Notes** | ✅ Fully approved |
+| **Service Type** | A2MCP (API service — pay-per-call) |
+| **Service Name** | Media Recommendations |
+| **Fee** | 0.001 USDT |
+| **Endpoint** | `https://shiori-h45s.onrender.com/chat` |
+| **Payment** | x402 — `WWW-Authenticate: Payment` + `PAYMENT-REQUIRED` headers |
+| **Avatar** | Uploaded to OKX CDN (440×440, square corners) |
+| **Status** | **Listing under review** (re-submitted multiple times) |
 
-### Registration Process
+### Review History
 
-1. Installed OnchainOS CLI (`v3.21.6-beta` — required for ARM64 compatibility with glibc 2.34)
-2. Installed `@okxweb3/a2a-node@latest` (A2A communication layer)
-3. Logged in to Agentic Wallet with `oladipupos111@gmail.com`
-4. Created ASP identity via `onchainos agent create`
-5. Uploaded avatar via `onchainos agent upload`
-6. Submitted for review via `onchainos agent activate`
-
-### Review Stuck — Issue Found & Fixed
-
-**Problem**: Service description failed validation — needed **2-part format** (core capability + what user must provide).
-
-**Old** (single sentence):
-> "Get 1-3 handpicked movies, anime, or novels matched to your unique taste, mood, and schedule"
-
-**Fixed** (2-part):
-> "I recommend 1-3 personalized movies, anime, or novels matched to your unique taste, mood, and schedule.
-> To get started, tell me about your favorite stories, your current mood, and how much time you have."
-
-**Validation**: Now passes `agent validate-listing` with no findings.
-
----
-
-## 4. A2A Communication Layer
-
-| Item | Detail |
-|---|---|
-| **okx-a2a daemon** | Running (PID varied 119K–135K) |
-| **AI Provider** | OpenClaw (installed via npm) |
-| **OpenClaw Gateway** | Running on `ws://127.0.0.1:18789` |
-| **Gateway Plugin Issue** | `@okxweb3/a2a-openclaw` plugin could not be installed — incompatible with OpenClaw 2026.6.11 plugin format |
-
-### Open Issues
-
-- OpenClaw okx-a2a plugin not installed (version mismatch between `@okxweb3/a2a-openclaw@0.1.7` and OpenClaw 2026.6.11)
-- OpenClaw gateway not properly connected to okx-a2a daemon ("device identity required")
-- These affect A2A messaging capability but do not block the HTTP endpoint
-
----
-
-## 5. Deployment Strategy
-
-### Current State
-
-| Component | Status |
-|---|---|
-| Oracle Cloud VM | **Down** (instance unreachable) |
-| Shiori on OKX.AI | **Live** but showing **offline** (backend down) |
-| GitHub Repo | Pushed and ready |
-| Render Blueprint | Configured (`render.yaml`) — **not yet deployed** |
-
-### Next Steps to Go Live
-
-1. **Deploy on Render** using GitHub repo via Render Dashboard
-2. **Set environment variables** in Render:
-   - `OPENROUTER_API_KEY` = `<your-openrouter-key>`
-   - `OPENROUTER_MODEL` = `openrouter/auto`
-3. **Set Render health check** path to `/health`
-4. **Verify** Shiori comes back online on OKX.AI
-
-### Alternative Hosting Options
-
-| Platform | Free Tier | Notes |
+| Attempt | Result | Reason |
 |---|---|---|
-| Render | 750h/mo | Spins down after inactivity (cold start ~5s) |
-| Railway | 500h/mo | More persistent, less cold start |
-| Fly.io | 3 always-on VMs | Best uptime, no cold starts |
+| 1st | ✅ AI passed | Avatars rejected (quality + specs) |
+| 2nd | ❌ Rejected | Avatar quality + specs (fixed: 440×440, new design) |
+| 3rd | ❌ Rejected | x402 validation, service timeout, missing description (fixed: WWW-Authenticate header, updated description with params + examples) |
+| 4th | 🔄 Under review | Submitted with all fixes |
 
 ---
 
-## 6. Hackathon Submission
+## 4. x402 Payment Protocol
+
+### Challenge Format (sent on unpaid requests)
+- **Status**: `402 Payment Required`
+- **Header**: `WWW-Authenticate: Payment id="shiori", realm="shiori-h45s.onrender.com", method="evm", intent="charge", request="<base64url>"`  
+- **Header**: `PAYMENT-REQUIRED: <base64 json>` (legacy compat)
+- **Body**: `{ error, payment: { x402Version, accepts[{ scheme, network, asset, amount, payTo, maxAmountRequired }] } }`
+
+### Payment Verification
+- Reads `X-PAYMENT` header from client (base64-encoded `{ txHash, payer }`)
+- Verifies on-chain via XLayer RPC (`xlayerrpc.okx.com`)
+  - Checks for USDT `Transfer` event in the transaction logs
+  - Confirms `to` = Shiori wallet, `amount >= 1000` (0.001 USDT)
+- Falls back to trust mode if RPC is unreachable or times out (8s timeout)
+- USDT contract: `0x1a7e4e63778B4f12a199C063f9831aE1c13e0f8E`
+- Payee: `0xa2fbc18fd6306d84566f85edd6912fc8f91af33c`
+
+---
+
+## 5. Frontend
+
+Built as a single-page app served from `/` on the Render server:
+
+| Feature | Detail |
+|---|---|
+| **Wallet Connect** | MetaMask (`ethereum.request`) |
+| **Network** | XLayer (chainId: `0xc4`) — auto-switch + add |
+| **Payment** | User clicks → MetaMask sends USDT `transfer` via `eth_sendTransaction` → waits for tx receipt → sends `X-PAYMENT` header |
+| **Chat UI** | Bubble-style chat with thinking indicator |
+| **Health** | Real-time status indicator |
+
+---
+
+## 6. A2A / A2MCP Endpoints
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/` | GET | Frontend landing page |
+| `/health`, `/ready` | GET | Health checks |
+| `/debug` | GET | Env var & server debugging |
+| `/chat` | POST | Main A2MCP endpoint (x402-gated) |
+| `/.well-known/agent.json` | GET | Agent card for A2A discovery |
+| `/a2mcp/tools` | GET | Tool listing |
+| `/a2mcp/invoke` | POST | Tool invocation |
+| `/a2a/tasks`, `/a2a/message` | POST | A2A REST tasks |
+| `/a2a` | POST | JSON-RPC A2A (`message/send`, `tasks/get`, etc.) |
+
+---
+
+## 7. Avatar
 
 | Item | Detail |
 |---|---|
-| **Hackathon** | OKX.AI Genesis Hackathon (HackQuest) |
-| **Prize Pool** | $100,000 |
-| **Submission Deadline** | July 17, 2026 (23:59 UTC) |
-| **Status** | ✅ Fully approved & live on OKX.AI |
-
-### Required Steps
-
-- [x] Build ASP (Shiori)
-- [x] Submit ASP for listing on OKX.AI
-- [x] Pass AI quality review (✅ approved)
-- [x] **Go live on OKX.AI** (✅ live)
-- [ ] Deploy backend so agent shows online
-- [ ] Post on X with `#OKXAI`
-- [ ] Submit HackQuest Google Form before Jul 17
+| **First avatar** | Rejected — low quality, misaligned with positioning |
+| **Second avatar** | Rejected — wrong dimensions, rounded corners |
+| **Third avatar** | 440×440 px, square corners, SVG-style design with books + film reel motif, deep purple/gold palette |
+| **CDN URL** | `https://static.okx.com/cdn/web3/wallet/marketplace/headimages/agent/avatar/cd2f8562-cfb9-4599-bac3-3e3d7d71f7d0.png` |
 
 ---
 
-## 7. Tech Stack Summary
+## 8. Pending Issues
+
+- [ ] **Listing approval** — Waiting for human review (up to 24h)
+- [ ] **Render cold start** — Free tier spins down; may cause timeout during review testing
+- [ ] **A2A communication** — Node.js v20.20.2 locally < v22.14.0 requirement for A2A daemon
+- [ ] **Set up UptimeRobot** — Ping `/health` every 5 min to keep warm during review
+
+---
+
+## 9. Tech Stack Summary
 
 ```
 LLM API:          OpenRouter → openrouter/auto (switchable via OPENROUTER_MODEL)
-Runtime:          Node.js v22
-Backend Server:   Express HTTP (server.js)
+Runtime:          Node.js v22.23.1 (Render); v20.20.2 (local)
+Backend Server:   Node.js HTTP (server.js)
+Payment:          x402 (custom — on-chain USDT verification via XLayer RPC)
+Frontend:         Vanilla HTML/CSS/JS with MetaMask integration
 Agent Definition: obito.md (system prompt)
 Profile Storage:  Local JSON files (data/profiles/)
-Process Manager:  PM2
-AI Agent Layer:   OpenClaw 2026.6.11
-A2A Comms:        okx-a2a v0.1.7
-ASP Platform:     OKX.AI (onchainos CLI v3.21.6-beta)
-Hosting:          [Pending — Oracle VM down, Render not yet deployed]
+ASP Platform:     OKX.AI (onchainos CLI v4.2.0)
+Hosting:          Render (free tier) — shiori-h45s.onrender.com
 GitHub:           github.com/oladipsinigami/Shiori
 ```
