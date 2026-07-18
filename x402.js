@@ -52,8 +52,23 @@ function generateChallenge() {
       maxAmountRequired: FEE_MINIMAL,
     }],
   };
+
+  const requestPayload = {
+    amount: FEE_MINIMAL,
+    currency: USDT_ADDRESS,
+    recipient: SHIORI_WALLET,
+    methodDetails: {
+      chainId: 196,
+      feePayer: true,
+    },
+  };
+
+  const wwwAuthValue = 'Payment id="shiori", realm="shiori-h45s.onrender.com", method="evm", intent="charge", request="' +
+    Buffer.from(JSON.stringify(requestPayload)).toString('base64url') + '"';
+
   return {
     headerValue: Buffer.from(JSON.stringify(challenge)).toString('base64'),
+    wwwAuthValue,
     challenge,
   };
 }

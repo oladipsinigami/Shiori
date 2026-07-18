@@ -163,11 +163,14 @@ const server = http.createServer(async (req, res) => {
           });
         }
       } else {
-        const { headerValue, challenge } = generateChallenge();
+        const { headerValue, wwwAuthValue, challenge } = generateChallenge();
         return sendJson(res, 402, {
           error: 'Payment required',
           payment: challenge,
-        }, { 'PAYMENT-REQUIRED': headerValue });
+        }, {
+          'PAYMENT-REQUIRED': headerValue,
+          'WWW-Authenticate': wwwAuthValue,
+        });
       }
 
       const raw = await readBody(req);
