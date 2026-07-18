@@ -8,6 +8,7 @@
   const walletRow = document.getElementById('wallet-row');
   const walletAddr = document.getElementById('wallet-addr');
   const paymentNote = document.getElementById('payment-note');
+  const publicUrlEl = document.getElementById('public-url');
 
   const SESSION_KEY = 'shiori_user_id';
   let userId = localStorage.getItem(SESSION_KEY);
@@ -28,12 +29,19 @@
     return div;
   }
 
-  addBubble('agent', "Hi — I'm Shiori. Connect your wallet above to get started (0.001 USDT per request on XLayer).");
+  addBubble('agent', "Hi — I'm Shiori. Connect your wallet above to get started (0.01 USDT per request on XLayer).");
 
   async function refreshHealth() {
     try {
       const res = await fetch('/health', { cache: 'no-store' });
       const data = await res.json();
+      // Drive the footer link from the server's PUBLIC_BASE_URL (via /health)
+      // so it always reflects the deployed domain instead of a hardcoded value.
+      if (data.publicUrl && publicUrlEl) {
+        const clean = data.publicUrl.replace(/\/$/, '');
+        publicUrlEl.href = clean;
+        publicUrlEl.textContent = clean.replace(/^https?:\/\//, '');
+      }
       if (res.ok && data.status === 'ok') {
         healthEl.textContent = 'online · /health ok';
         healthEl.style.color = 'var(--accent-2)';
@@ -124,10 +132,10 @@
 
     const token = '0x1a7e4e63778B4f12a199C063f9831aE1c13e0f8E';
     const payTo = '0xa2fbc18fd6306d84566f85edd6912fc8f91af33c';
-    const amount = '1000';
+    const amount = '10000';
 
     try {
-      addBubble('system', 'Sending 0.001 USDT to Shiori on XLayer...');
+      addBubble('system', 'Sending 0.01 USDT to Shiori on XLayer...');
 
       const txHash = await ethereum.request({
         method: 'eth_sendTransaction',
@@ -163,8 +171,8 @@
 
     if (res.status === 402) {
       const data = await res.json().catch(() => ({}));
-      addBubble('system', 'Payment required — 0.001 USDT on XLayer');
-      const payDiv = addBubble('system', '💳 Click to pay 0.001 USDT and continue', true);
+      addBubble('system', 'Payment required — 0.01 USDT on XLayer');
+      const payDiv = addBubble('system', '💳 Click to pay 0.01 USDT and continue', true);
       payDiv.style.cursor = 'pointer';
       payDiv.style.border = '1px solid var(--accent)';
       payDiv.style.padding = '0.75rem 1rem';
@@ -229,5 +237,90 @@
         btn.textContent = 'Select & copy';
       }
     });
+  });
+
+  /* ===================== Cinematic scene switcher ===================== */
+  // CSS owns the visuals; JS just flips classes/attributes:
+  //   body[data-scene="N"]  -> content theming (scene 2 = Night City dark)
+  //   .scene-video.is-active -> which clip is visible (1000ms crossfade)
+  //   body.scene-sweeping    -> fires the one-shot liquid-glass light-sweep
+  const SCENE_FADE = 1000;
+  const videos = Array.from(document.querySelectorAll('[data-scene-video]'));
+  const moodBtns = Array.from(document.querySelectorAll('[data-scene-btn]'));
+  let activeScene = 0;
+  let isTransitioning = false;
+
+  function tryPlay(video) {
+    if (!video) return;
+    const p = video.play();
+    if (p && typeof p.catch === 'function') p.catch(() => { /* autoplay blocked; ignore */ });
+  }
+
+  function setScene(next) {
+    if (next === activeScene || isTransitioning) return;
+    if (next < 0 || next >= videos.length) return;
+    isTransitioning = true;
+
+    const incoming = videos[next];
+    if (incoming) {
+      if (incoming.preload === 'none') { incoming.preload = 'auto'; incoming.load(); }
+      tryPlay(incoming);
+    }
+
+    videos.forEach((v, i) => v.classList.toggle('is-active', i === next));
+    moodBtns.forEach((b, i) => {
+      const on = i === next;
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    document.body.setAttribute('data-scene', String(next));
+
+    // Fire the signature light-sweep across all glass panels, in sync.
+    document.body.classList.remove('scene-sweeping');
+    void document.body.offsetWidth; // reflow so the animation can restart
+    document.body.classList.add('scene-sweeping');
+
+    activeScene = next;
+    setTimeout(() => {
+      isTransitioning = false;
+      document.body.classList.remove('scene-sweeping');
+    }, SCENE_FADE);
+  }
+
+  moodBtns.forEach((btn) => {
+    btn.addEventListener('click', () => setScene(Number(btn.getAttribute('data-scene-btn'))));
+  });
+
+  // Kick the first clip once the page is interactive (some browsers need a nudge).
+  tryPlay(videos[0]);
+
+  /* ===================== Mobile menu ===================== */
+  const menuToggle = document.getElementById('menu-toggle');
+  const mobileMenu = document.getElementById('mobile-menu');
+
+  function openMenu() {
+    if (!mobileMenu) return;
+    mobileMenu.hidden = false;
+    // next frame so the [hidden]->visible transition animates
+    requestAnimationFrame(() => document.body.classList.add('menu-open'));
+    menuToggle && menuToggle.setAttribute('aria-expanded', 'true');
+    menuToggle && menuToggle.setAttribute('aria-label', 'Close menu');
+  }
+  function closeMenu() {
+    document.body.classList.remove('menu-open');
+    menuToggle && menuToggle.setAttribute('aria-expanded', 'false');
+    menuToggle && menuToggle.setAttribute('aria-label', 'Open menu');
+    setTimeout(() => { if (mobileMenu && !document.body.classList.contains('menu-open')) mobileMenu.hidden = true; }, 500);
+  }
+  function toggleMenu() {
+    if (document.body.classList.contains('menu-open')) closeMenu(); else openMenu();
+  }
+
+  if (menuToggle) menuToggle.addEventListener('click', toggleMenu);
+  if (mobileMenu) {
+    mobileMenu.querySelectorAll('a, button').forEach((el) => el.addEventListener('click', closeMenu));
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.body.classList.contains('menu-open')) closeMenu();
   });
 })();

@@ -1,12 +1,20 @@
 const https = require('https');
 
 const XLAYER_RPC = process.env.XLAYER_RPC || 'https://xlayerrpc.okx.com';
+// x402 payment realm — the host clients see in the WWW-Authenticate challenge.
+// Derived from PUBLIC_BASE_URL so it always matches the deployed domain.
+const PUBLIC_BASE_URL =
+  process.env.PUBLIC_BASE_URL ||
+  process.env.RENDER_EXTERNAL_URL ||
+  'https://shiori-h45s.onrender.com';
+const PAYMENT_REALM = PUBLIC_BASE_URL.replace(/^https?:\/\//, '').replace(/\/$/, '');
 const USDT_ADDRESS = '0x1a7e4e63778B4f12a199C063f9831aE1c13e0f8E';
 const SHIORI_WALLET = '0xa2fbc18fd6306d84566f85edd6912fc8f91af33c';
-const FEE_MINIMAL = '1000';
-const FEE_HUMAN = '0.001';
+const FEE_MINIMAL = '10000';
+const FEE_HUMAN = '0.01';
 const USDT_DECIMALS = 6;
 const RPC_TIMEOUT = 8000;
+const RPC_MAX_ATTEMPTS = 3;
 
 const ERC20_TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 
@@ -40,6 +48,25 @@ function rpcCall(method, params) {
   });
 }
 
+// Calls the RPC with a few retries and exponential backoff. Throws if all
+// attempts fail so the caller can reject the payment (never accept on trust).
+async function rpcCallWithRetry(method, params) {
+  let lastErr;
+  for (let attempt = 1; attempt <= RPC_MAX_ATTEMPTS; attempt++) {
+    try {
+      return await rpcCall(method, params);
+    } catch (err) {
+      lastErr = err;
+      if (attempt < RPC_MAX_ATTEMPTS) {
+        const delay = 1000 * attempt; // 1s, 2s
+        console.error(`RPC attempt ${attempt} failed (${err.message}), retrying in ${delay}ms`);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+  throw lastErr || new Error('RPC failed after retries');
+}
+
 function generateChallenge() {
   const challenge = {
     x402Version: '1',
@@ -63,7 +90,7 @@ function generateChallenge() {
     },
   };
 
-  const wwwAuthValue = 'Payment id="shiori", realm="shiori-h45s.onrender.com", method="evm", intent="charge", request="' +
+  const wwwAuthValue = `Payment id="shiori", realm="${PAYMENT_REALM}", method="evm", intent="charge", request="` +
     Buffer.from(JSON.stringify(requestPayload)).toString('base64url') + '"';
 
   return {
@@ -84,25 +111,15 @@ async function verifyPayment(xPaymentHeader) {
 
     let receipt;
     try {
-      receipt = await rpcCall('eth_getTransactionReceipt', [txHash]);
+      receipt = await rpcCallWithRetry('eth_getTransactionReceipt', [txHash]);
     } catch (rpcErr) {
-      console.error('RPC error, accepting payment on trust:', rpcErr.message);
-      return {
-        valid: true,
-        payer: decoded.payer || 'unknown',
-        txHash,
-        onChainVerification: false,
-      };
+      console.error('RPC unavailable after retries, rejecting payment:', rpcErr.message);
+      return { valid: false, reason: 'Could not verify payment on-chain (RPC unavailable). Please retry.' };
     }
 
     if (!receipt || !receipt.result) {
-      console.error('Tx not found on-chain, accepting on trust:', txHash);
-      return {
-        valid: true,
-        payer: decoded.payer || 'unknown',
-        txHash,
-        onChainVerification: false,
-      };
+      console.error('Tx not found on-chain, rejecting:', txHash);
+      return { valid: false, reason: 'Transaction not found on-chain yet. Wait for confirmation and retry.' };
     }
 
     const logs = receipt.result.logs || [];

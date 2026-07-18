@@ -60,7 +60,7 @@ function agentCard() {
       agentId: process.env.OKX_AGENT_ID || '5001',
       role: 'ASP',
       service: 'Media Recommendations',
-      pricing: '0 USDT',
+      pricing: '0.01 USDT',
       wallet: process.env.OKX_WALLET_ADDRESS || '0xa2fbc18fd6306d84566f85edd6912fc8f91af33c',
       modes: ['A2A', 'A2MCP-HTTP']
     }

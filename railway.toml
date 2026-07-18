@@ -6,7 +6,9 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "node scripts/railway-a2a-worker.js"
+# Runs both the HTTP brain (server.js) and the A2A marketplace worker.
+# server.js owns the public PORT and serves /health.
+startCommand = "node scripts/railway-start.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 120
 restartPolicyType = "ON_FAILURE"

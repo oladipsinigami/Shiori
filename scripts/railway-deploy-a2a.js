@@ -54,13 +54,19 @@ async function main() {
   const sessionB64 = fs.readFileSync(path.join(idDir, 'session.b64'), 'utf8').trim();
   const walletsB64 = fs.readFileSync(path.join(idDir, 'wallets.b64'), 'utf8').trim();
 
+  // PUBLIC_BASE_URL should be the Railway public domain for this service
+  // (agent card + x402 realm). Override via env when deploying.
+  const publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://shiori-h45s.onrender.com';
+
   const vars = {
     OKX_A2A_ENABLE: '1',
-    SHIORI_URL: 'https://shiori-h45s.onrender.com',
-    PUBLIC_BASE_URL: 'https://shiori-h45s.onrender.com',
+    // Worker reaches the in-container brain served by server.js.
+    SHIORI_URL: 'http://127.0.0.1:8080',
+    PUBLIC_BASE_URL: publicBaseUrl,
     OKX_AGENT_ID: '5001',
     OKX_AGENT_TASK_HOME: '/data/okx-agent-task',
     HOME: '/data',
+    DATA_DIR: '/data',
     ONCHAINOS_HOME: '/data/.onchainos',
     OKX_A2A_AI_PROVIDER: 'claude',
     OKX_A2A_AI_CLAUDE_COMMAND: '/app/scripts/bin/claude',
@@ -104,7 +110,7 @@ async function main() {
         environmentId: ENV,
         serviceId: SERVICE,
         input: {
-          startCommand: 'node scripts/railway-a2a-worker.js'
+          startCommand: 'node scripts/railway-start.js'
         }
       }
     );

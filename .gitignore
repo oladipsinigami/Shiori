@@ -2,3 +2,10 @@
 node_modules/
 data/profiles/
 logs/
+
+# Local scratch / raw source assets (not needed for deploy)
+Pinterest Video Downloader/
+prompt.md
+skills/
+generate_avatar.py
+shiori_avatar.png

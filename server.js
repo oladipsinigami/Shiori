@@ -27,7 +27,11 @@ const MIME = {
   '.jpeg': 'image/jpeg',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
-  '.webp': 'image/webp'
+  '.webp': 'image/webp',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2'
 };
 
 function sendJson(res, status, body, extraHeaders) {
@@ -88,7 +92,36 @@ function serveStatic(req, res, urlPath) {
 
   const ext = path.extname(filePath).toLowerCase();
   const type = MIME[ext] || 'application/octet-stream';
-  res.writeHead(200, { 'Content-Type': type, 'Access-Control-Allow-Origin': '*' });
+  const stat = fs.statSync(filePath);
+
+  // Honor HTTP Range requests so <video> playback works (iOS Safari requires
+  // 206 partial responses to start/seek media).
+  const range = req.headers.range;
+  if (range) {
+    const match = /bytes=(\d*)-(\d*)/.exec(range);
+    if (match) {
+      const start = match[1] ? parseInt(match[1], 10) : 0;
+      const end = match[2] ? parseInt(match[2], 10) : stat.size - 1;
+      if (start <= end && end < stat.size) {
+        res.writeHead(206, {
+          'Content-Type': type,
+          'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': end - start + 1,
+          'Access-Control-Allow-Origin': '*',
+        });
+        fs.createReadStream(filePath, { start, end }).pipe(res);
+        return true;
+      }
+    }
+  }
+
+  res.writeHead(200, {
+    'Content-Type': type,
+    'Content-Length': stat.size,
+    'Accept-Ranges': 'bytes',
+    'Access-Control-Allow-Origin': '*',
+  });
   fs.createReadStream(filePath).pipe(res);
   return true;
 }

@@ -29,10 +29,10 @@ ENV NODE_ENV=production \
     OKX_A2A_ENABLE=1 \
     OKX_AGENT_TASK_HOME=/data/okx-agent-task \
     HOME=/data \
+    DATA_DIR=/data \
     PATH="/usr/local/bin:/root/.local/bin:/app/scripts/bin:${PATH}" \
-    SHIORI_URL=https://shiori-h45s.onrender.com \
     OKX_A2A_AI_PROVIDER=claude \
     OKX_A2A_AI_CLAUDE_COMMAND=/app/scripts/bin/claude
 
 EXPOSE 8080
-CMD ["node", "scripts/railway-a2a-worker.js"]
+CMD ["node", "scripts/railway-start.js"]

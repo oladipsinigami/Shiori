@@ -24,8 +24,11 @@ function loadSystemPrompt(filePath) {
 }
 const systemPrompt = loadSystemPrompt(promptPath);
 
-const profilesDir = path.join(__dirname, 'data', 'profiles');
-const logsDir = path.join(__dirname, 'logs');
+// Storage root. Defaults to the repo dir for local dev; set DATA_DIR=/data on
+// Railway (the mounted persistent volume) so taste memory survives restarts.
+const dataDir = process.env.DATA_DIR || __dirname;
+const profilesDir = path.join(dataDir, 'data', 'profiles');
+const logsDir = path.join(dataDir, 'logs');
 fs.mkdirSync(profilesDir, { recursive: true });
 fs.mkdirSync(logsDir, { recursive: true });
 
