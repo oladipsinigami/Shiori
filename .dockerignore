@@ -4,6 +4,7 @@ logs
 data/profiles
 .env
 *.md
+!obito.md
 scripts/_inspect*
 scripts/railway-*.js
 !scripts/railway-start.js
