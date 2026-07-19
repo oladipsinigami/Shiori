@@ -6,5 +6,6 @@ data/profiles
 *.md
 scripts/_inspect*
 scripts/railway-*.js
+!scripts/railway-start.js
 !scripts/railway-a2a-worker.js
 !scripts/bootstrap-identity.js
