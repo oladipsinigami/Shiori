@@ -40,6 +40,7 @@ function sendJson(res, status, body, extraHeaders) {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-payment, x-payment-address',
+    'Access-Control-Expose-Headers': 'PAYMENT-REQUIRED, WWW-Authenticate, X-PAYMENT-RESPONSE',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     ...extraHeaders,
   };
@@ -187,20 +188,35 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && pathname === '/chat') {
       const xPayment = req.headers['x-payment'];
 
+      // Absolute URL of this paid resource, for the challenge's `resource` field.
+      const proto = (req.headers['x-forwarded-proto'] || '').split(',')[0].trim() ||
+        (req.socket && req.socket.encrypted ? 'https' : 'http');
+      const host = req.headers['x-forwarded-host'] || req.headers.host || '';
+      const resourceUrl = host ? `${proto}://${host}/chat` : undefined;
+
+      let settlementHeader;
+
       if (xPayment) {
         const payResult = await verifyPayment(xPayment);
         if (!payResult.valid) {
+          // Re-issue the challenge alongside the failure so clients can retry.
+          const { body, headerValue, wwwAuthValue } = generateChallenge(resourceUrl);
           return sendJson(res, 402, {
-            error: 'Payment verification failed',
-            detail: payResult.reason,
+            ...body,
+            error: `Payment verification failed: ${payResult.reason}`,
+          }, {
+            'PAYMENT-REQUIRED': headerValue,
+            'WWW-Authenticate': wwwAuthValue,
           });
         }
+        if (payResult.settlement) {
+          settlementHeader = Buffer.from(JSON.stringify(payResult.settlement)).toString('base64');
+        }
       } else {
-        const { headerValue, wwwAuthValue, challenge } = generateChallenge();
-        return sendJson(res, 402, {
-          error: 'Payment required',
-          payment: challenge,
-        }, {
+        // Unpaid request → standard x402 402 challenge. Body IS the challenge
+        // (x402Version / error / accepts at top level) per the x402 v1 spec.
+        const { body, headerValue, wwwAuthValue } = generateChallenge(resourceUrl);
+        return sendJson(res, 402, body, {
           'PAYMENT-REQUIRED': headerValue,
           'WWW-Authenticate': wwwAuthValue,
         });
@@ -219,7 +235,9 @@ const server = http.createServer(async (req, res) => {
       }
       try {
         const { text, recIds } = await runObito(userId, message);
-        return sendJson(res, 200, { response: text, recIds });
+        // On success, echo settlement back in the standard X-PAYMENT-RESPONSE header.
+        const extraHeaders = settlementHeader ? { 'X-PAYMENT-RESPONSE': settlementHeader } : undefined;
+        return sendJson(res, 200, { response: text, recIds }, extraHeaders);
       } catch (err) {
         console.error('/chat LLM error:', err.message, err.stack);
         return sendJson(res, 500, { error: err.message || 'LLM call failed' });
