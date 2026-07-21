@@ -21,8 +21,12 @@ process.env.DATA_DIR = process.env.DATA_DIR || '/data';
 // Public port for the brain (website + /chat + /health).
 const PORT = process.env.PORT || '8080';
 
-// In-container URL the worker + claude shim use to reach the brain.
-const SHIORI_URL = process.env.SHIORI_URL || `http://127.0.0.1:${PORT}`;
+// Worker + claude shim must hit the in-container brain over loopback so they
+// bypass public x402 (isTrustedInternal). Do NOT use the public Render URL
+// here — that would 402 and break marketplace XMTP delivery.
+// PUBLIC_BASE_URL / external SHIORI_URL stay for clients; this is internal only.
+const SHIORI_URL =
+  process.env.SHIORI_IN_CONTAINER_URL || `http://127.0.0.1:${PORT}`;
 
 const children = [];
 let shuttingDown = false;
