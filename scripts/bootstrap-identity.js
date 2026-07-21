@@ -127,23 +127,112 @@ function bootstrap() {
     process.env.ONCHAINOS_DO_LOGIN === '1' || process.env.ONCHAINOS_DO_LOGIN === 'true';
   const otp = (process.env.ONCHAINOS_OTP || '').trim();
 
+  if (doLogin || otp) {
+    runOnchainos(['wallet', 'login', '--help'], env);
+    runOnchainos(['wallet', 'verify', '--help'], env);
+  }
+
   if (doLogin) {
-    console.log('[bootstrap] ONCHAINOS_DO_LOGIN=1 → sending OTP to', email);
-    runOnchainos(['wallet', 'login', email, '--force', '--locale', 'en_US'], env);
+    // Prefer API-key login when OKX_API_KEY / SECRET / PASSPHRASE are present
+    // (no OTP, works inside the container). Fall back to email OTP otherwise.
+    const hasAk =
+      process.env.OKX_API_KEY &&
+      (process.env.OKX_SECRET_KEY || process.env.OKX_API_SECRET) &&
+      (process.env.OKX_PASSPHRASE || process.env.OKX_API_PASSPHRASE);
+
+    // Map OKX_API_SECRET → OKX_SECRET_KEY for onchainos AK login naming.
+    if (process.env.OKX_API_SECRET && !process.env.OKX_SECRET_KEY) {
+      env.OKX_SECRET_KEY = process.env.OKX_API_SECRET;
+    }
+    if (process.env.OKX_API_PASSPHRASE && !process.env.OKX_PASSPHRASE) {
+      env.OKX_PASSPHRASE = process.env.OKX_API_PASSPHRASE;
+    }
+
+    if (hasAk) {
+      console.log('[bootstrap] ONCHAINOS_DO_LOGIN=1 → API Key login (no OTP)');
+      // Clear foreign session first so AK login can write a native container session.
+      if (
+        process.env.ONCHAINOS_CLEAR_SESSION === '1' ||
+        process.env.ONCHAINOS_CLEAR_SESSION === 'true'
+      ) {
+        try {
+          if (fs.existsSync(sessionPath)) {
+            fs.unlinkSync(sessionPath);
+            console.log('[bootstrap] cleared old session.json before AK login');
+          }
+        } catch (e) {
+          console.warn('[bootstrap] could not clear session:', e.message);
+        }
+      }
+      const akAttempts = [
+        ['wallet', 'login', '--force'],
+        ['wallet', 'login'],
+      ];
+      let loginOk = false;
+      for (const args of akAttempts) {
+        const r = runOnchainos(args, env);
+        if (r.status === 0) {
+          loginOk = true;
+          console.log('[bootstrap] AK login succeeded with:', args.join(' '));
+          break;
+        }
+      }
+      if (!loginOk) console.error('[bootstrap] AK login failed');
+      runOnchainos(['wallet', 'status'], env);
+      runOnchainos(['agent', 'get', '--page', '1', '--page-size', '5'], env);
+    } else {
+      console.log('[bootstrap] ONCHAINOS_DO_LOGIN=1 → email OTP login for', email);
+      const loginAttempts = [
+        ['wallet', 'login', email, '--force', '--locale', 'en_US'],
+        ['wallet', 'login', '--email', email, '--force', '--locale', 'en_US'],
+        ['wallet', 'login', '--force', email],
+        ['wallet', 'login', email, '--force'],
+        ['wallet', 'login', email],
+      ];
+      let loginOk = false;
+      for (const args of loginAttempts) {
+        const r = runOnchainos(args, env);
+        if (r.status === 0) {
+          loginOk = true;
+          console.log('[bootstrap] email login succeeded with:', args.join(' '));
+          break;
+        }
+      }
+      if (!loginOk) console.error('[bootstrap] all email login attempts failed');
+    }
   }
 
   if (otp) {
     console.log('[bootstrap] ONCHAINOS_OTP set → verifying OTP on this host');
-    // Drop any foreign session so verify can write a native one
-    if (forceRestore === false && fs.existsSync(sessionPath) && process.env.ONCHAINOS_CLEAR_SESSION === '1') {
+    // Drop foreign/laptop session so verify can write a container-native one.
+    if (
+      process.env.ONCHAINOS_CLEAR_SESSION === '1' ||
+      process.env.ONCHAINOS_CLEAR_SESSION === 'true'
+    ) {
       try {
-        fs.unlinkSync(sessionPath);
-        console.log('[bootstrap] cleared old session.json before verify');
+        if (fs.existsSync(sessionPath)) {
+          fs.unlinkSync(sessionPath);
+          console.log('[bootstrap] cleared old session.json before verify');
+        }
       } catch (e) {
         console.warn('[bootstrap] could not clear session:', e.message);
       }
     }
-    runOnchainos(['wallet', 'verify', otp], env);
+    const verifyAttempts = [
+      ['wallet', 'verify', otp],
+      ['wallet', 'verify', '--otp', otp],
+      ['wallet', 'login', 'verify', otp],
+    ];
+    let verifyOk = false;
+    for (const args of verifyAttempts) {
+      const r = runOnchainos(args, env);
+      if (r.status === 0) {
+        verifyOk = true;
+        console.log('[bootstrap] verify succeeded with:', args.join(' '));
+        break;
+      }
+    }
+    if (!verifyOk) console.error('[bootstrap] all verify attempts failed');
     // Smoke-check
     runOnchainos(['wallet', 'status'], env);
     runOnchainos(['agent', 'get', '--page', '1', '--page-size', '5'], env);
