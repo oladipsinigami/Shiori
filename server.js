@@ -109,6 +109,81 @@ app.get(['/a2mcp/tools', '/mcp/tools'], (_req, res) => {
 
 // --- Paid brain: POST /chat (OKX x402 Payment SDK) ---
 
+// When this host has no OKX Payment keys (e.g. free Render), forward /chat to the
+// Railway brain that does. Preserve Host / X-Forwarded-* so the 402 `resource`
+// still matches the public listing URL (shiori-h45s.onrender.com).
+const X402_PEER_URL = (
+  process.env.X402_PEER_URL ||
+  'https://shiori-a2a-worker-production.up.railway.app'
+).replace(/\/$/, '');
+
+async function proxyChatToPeer(req, res) {
+  const target = `${X402_PEER_URL}/chat`;
+  const publicHost =
+    (req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
+  const publicProto =
+    (req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0].trim();
+
+  const headers = {
+    'content-type': req.get('content-type') || 'application/json',
+    accept: req.get('accept') || 'application/json',
+  };
+  // Payment headers (exact / charge clients)
+  for (const name of [
+    'x-payment',
+    'payment-signature',
+    'payment-required',
+    'authorization',
+    'x-shiori-internal-key',
+  ]) {
+    const v = req.get(name);
+    if (v) headers[name] = v;
+  }
+  // Make the peer issue a challenge for THIS public host (listing URL).
+  if (publicHost) {
+    headers.host = publicHost;
+    headers['x-forwarded-host'] = publicHost;
+    headers['x-forwarded-proto'] = publicProto || 'https';
+  }
+
+  const body =
+    req.body && Object.keys(req.body).length
+      ? JSON.stringify(req.body)
+      : undefined;
+
+  console.log(`[x402-proxy] ${req.method} /chat → ${target} (host=${publicHost || '?'})`);
+
+  try {
+    const upstream = await fetch(target, {
+      method: 'POST',
+      headers,
+      body,
+    });
+    const text = await upstream.text();
+    // Relay status + payment-related headers
+    res.status(upstream.status);
+    for (const h of [
+      'content-type',
+      'payment-required',
+      'payment-response',
+      'x-payment-response',
+      'www-authenticate',
+      'access-control-expose-headers',
+    ]) {
+      const v = upstream.headers.get(h);
+      if (v) res.setHeader(h, v);
+    }
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    return res.send(text);
+  } catch (err) {
+    console.error('[x402-proxy] failed:', err.message);
+    return res.status(502).json({
+      error: `x402 peer proxy failed: ${err.message}`,
+      peer: X402_PEER_URL,
+    });
+  }
+}
+
 async function chatHandler(req, res) {
   const { userId, message } = req.body || {};
   if (!userId || !message) {
@@ -125,15 +200,13 @@ async function chatHandler(req, res) {
 
 // Internal marketplace worker (loopback / shared secret) skips x402.
 // Public clients get the OKX SDK standard 402 challenge when unpaid.
-app.post('/chat', (req, res, next) => {
+app.post('/chat', async (req, res, next) => {
   if (isTrustedInternal(req)) {
     return next();
   }
   if (!paymentGate.configured || !paymentGate.middleware) {
-    return res.status(503).json({
-      error:
-        'x402 Payment SDK not configured. Set OKX_API_KEY, OKX_SECRET_KEY, OKX_PASSPHRASE on the host.',
-    });
+    // Render (or any host without OKX SA keys) → Railway peer that has them.
+    return proxyChatToPeer(req, res);
   }
   return paymentGate.middleware(req, res, next);
 }, chatHandler);
