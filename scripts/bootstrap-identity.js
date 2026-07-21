@@ -185,24 +185,91 @@ function bootstrap() {
       runOnchainos(['wallet', 'status'], env);
       runOnchainos(['agent', 'get', '--page', '1', '--page-size', '5'], env);
     } else {
-      console.log('[bootstrap] ONCHAINOS_DO_LOGIN=1 → email OTP login for', email);
-      const loginAttempts = [
-        ['wallet', 'login', email, '--force', '--locale', 'en_US'],
-        ['wallet', 'login', '--email', email, '--force', '--locale', 'en_US'],
-        ['wallet', 'login', '--force', email],
-        ['wallet', 'login', email, '--force'],
-        ['wallet', 'login', email],
-      ];
-      let loginOk = false;
-      for (const args of loginAttempts) {
-        const r = runOnchainos(args, env);
-        if (r.status === 0) {
-          loginOk = true;
-          console.log('[bootstrap] email login succeeded with:', args.join(' '));
-          break;
+      // Newer onchainos (Railway image): browser social login
+      //   bare `wallet login` / `--phase init` → login URL
+      //   `--phase poll` until complete
+      // Older CLI (local 4.2): `wallet login <email>` → OTP → `wallet verify`
+      console.log('[bootstrap] ONCHAINOS_DO_LOGIN=1 → browser/email login flow for', email);
+
+      if (
+        process.env.ONCHAINOS_CLEAR_SESSION === '1' ||
+        process.env.ONCHAINOS_CLEAR_SESSION === 'true'
+      ) {
+        try {
+          if (fs.existsSync(sessionPath)) {
+            fs.unlinkSync(sessionPath);
+            console.log('[bootstrap] cleared old session.json before browser login');
+          }
+        } catch (e) {
+          console.warn('[bootstrap] could not clear session:', e.message);
         }
       }
-      if (!loginOk) console.error('[bootstrap] all email login attempts failed');
+
+      // 1) Init — prefer browser phase (new CLI), fall back to email OTP (old CLI)
+      let init = runOnchainos(['wallet', 'login', '--phase', 'init'], env);
+      if (init.status !== 0) {
+        init = runOnchainos(['wallet', 'login'], env);
+      }
+      if (init.status !== 0) {
+        init = runOnchainos(
+          ['wallet', 'login', email, '--force', '--locale', 'en_US'],
+          env
+        );
+        if (init.status === 0) {
+          console.log(
+            '[bootstrap] email OTP sent to',
+            email,
+            '— set ONCHAINOS_OTP and redeploy (clear DO_LOGIN)'
+          );
+        }
+      }
+
+      const combined = `${init.stdout || ''}\n${init.stderr || ''}`;
+      const urlMatch = combined.match(/https?:\/\/[^\s"'<>]+/g);
+      if (urlMatch && urlMatch.length) {
+        console.log('[bootstrap] ============================================');
+        console.log('[bootstrap] OPEN THIS LOGIN URL IN A BROWSER (5 min):');
+        for (const u of urlMatch) console.log('[bootstrap] ', u);
+        console.log('[bootstrap] ============================================');
+      }
+
+      // 2) Poll for browser completion (up to ~3 min)
+      const shouldPoll =
+        process.env.ONCHAINOS_LOGIN_POLL !== '0' &&
+        process.env.ONCHAINOS_LOGIN_POLL !== 'false';
+      if (shouldPoll && init.status === 0) {
+        console.log('[bootstrap] polling wallet login for up to 180s…');
+        const deadline = Date.now() + 180_000;
+        let polledOk = false;
+        while (Date.now() < deadline) {
+          const poll = runOnchainos(['wallet', 'login', '--phase', 'poll'], env);
+          const out = `${poll.stdout || ''}\n${poll.stderr || ''}`;
+          if (
+            poll.status === 0 &&
+            (/loggedIn["']?\s*:\s*true/i.test(out) ||
+              /"ok"\s*:\s*true/i.test(out) && /accountId/i.test(out) ||
+              fs.existsSync(sessionPath))
+          ) {
+            // Confirm session actually works
+            const st = runOnchainos(['wallet', 'status'], env);
+            const stOut = `${st.stdout || ''}`;
+            if (/loggedIn["']?\s*:\s*true/i.test(stOut) || st.status === 0) {
+              console.log('[bootstrap] browser login poll appears successful');
+              polledOk = true;
+              break;
+            }
+          }
+          // sleep 5s
+          spawnSync('bash', ['-lc', 'sleep 5'], { env: process.env });
+        }
+        if (!polledOk) {
+          console.error(
+            '[bootstrap] login poll timed out — open the URL above, then set ONCHAINOS_LOGIN_POLL=1 and redeploy (or set ONCHAINOS_OTP if email OTP)'
+          );
+        } else {
+          runOnchainos(['agent', 'get', '--page', '1', '--page-size', '5'], env);
+        }
+      }
     }
   }
 
