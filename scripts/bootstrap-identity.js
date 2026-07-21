@@ -1,22 +1,53 @@
 #!/usr/bin/env node
 /**
- * Restore OnchainOS wallet/session identity onto the Railway volume.
+ * Restore OnchainOS identity onto the Railway volume.
  *
- * Env (base64 of file contents):
- *   ONCHAINOS_SESSION_B64
- *   ONCHAINOS_WALLETS_B64
+ * IMPORTANT: session.json is device/TEE-bound. A session created on your
+ * laptop CANNOT be copied to Railway — onchainos will report "session expired".
+ * Login must happen *inside* the container (see ONCHAINOS_DO_LOGIN / ONCHAINOS_OTP).
  *
- * Optional:
- *   ONCHAINOS_HOME  default $HOME/.onchainos  (HOME=/data on Railway)
+ * Env:
+ *   ONCHAINOS_WALLETS_B64     optional account map restore (safe-ish)
+ *   ONCHAINOS_SESSION_B64     only applied if no session on volume, or FORCE_RESTORE=1
+ *   ONCHAINOS_FORCE_RESTORE=1 overwrite volume session with SESSION_B64 (usually wrong)
+ *   ONCHAINOS_DO_LOGIN=1      run `onchainos wallet login <email> --force` (sends OTP)
+ *   ONCHAINOS_LOGIN_EMAIL     default oladipupos111@gmail.com
+ *   ONCHAINOS_OTP             if set, run `onchainos wallet verify <otp>` on this machine
+ *   ONCHAINOS_HOME            default $HOME/.onchainos
  */
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { spawnSync } = require('child_process');
 
 function decodeB64(name) {
   const v = process.env[name];
   if (!v || !String(v).trim()) return null;
   return Buffer.from(String(v).replace(/\s+/g, ''), 'base64');
+}
+
+function whichOnchainos() {
+  const r = spawnSync('bash', ['-lc', 'command -v onchainos || true'], {
+    encoding: 'utf8',
+    env: process.env,
+  });
+  const p = (r.stdout || '').trim();
+  return p || null;
+}
+
+function runOnchainos(args, env) {
+  const bin = whichOnchainos() || 'onchainos';
+  console.log('[bootstrap] onchainos', args.join(' '));
+  const r = spawnSync(bin, args, {
+    encoding: 'utf8',
+    env: { ...process.env, ...env },
+    timeout: 120_000,
+  });
+  if (r.stdout) process.stdout.write(r.stdout);
+  if (r.stderr) process.stderr.write(r.stderr);
+  if (r.error) console.error('[bootstrap] onchainos spawn error:', r.error.message);
+  console.log('[bootstrap] onchainos exit', r.status);
+  return r;
 }
 
 function bootstrap() {
@@ -31,32 +62,49 @@ function bootstrap() {
     fs.mkdirSync(path.join(taskHome, sub), { recursive: true });
   }
 
-  const session = decodeB64('ONCHAINOS_SESSION_B64');
-  const wallets = decodeB64('ONCHAINOS_WALLETS_B64');
+  const sessionPath = path.join(onHome, 'session.json');
+  const walletsPath = path.join(onHome, 'wallets.json');
+  const forceRestore =
+    process.env.ONCHAINOS_FORCE_RESTORE === '1' ||
+    process.env.ONCHAINOS_FORCE_RESTORE === 'true';
 
-  if (session) {
-    fs.writeFileSync(path.join(onHome, 'session.json'), session);
-    console.log('[bootstrap] wrote session.json');
-  } else if (!fs.existsSync(path.join(onHome, 'session.json'))) {
-    console.warn('[bootstrap] ONCHAINOS_SESSION_B64 missing');
+  // Wallets: safe to restore account map from env if missing.
+  const wallets = decodeB64('ONCHAINOS_WALLETS_B64');
+  if (wallets && (forceRestore || !fs.existsSync(walletsPath))) {
+    fs.writeFileSync(walletsPath, wallets);
+    console.log('[bootstrap] wrote wallets.json');
+  } else if (!fs.existsSync(walletsPath)) {
+    console.warn('[bootstrap] wallets.json missing and ONCHAINOS_WALLETS_B64 not set');
+  } else {
+    console.log('[bootstrap] keeping existing wallets.json on volume');
   }
 
-  if (wallets) {
-    fs.writeFileSync(path.join(onHome, 'wallets.json'), wallets);
-    console.log('[bootstrap] wrote wallets.json');
-  } else if (!fs.existsSync(path.join(onHome, 'wallets.json'))) {
-    console.warn('[bootstrap] ONCHAINOS_WALLETS_B64 missing');
+  // Session: NEVER clobber a volume session with a foreign machine's session
+  // unless FORCE_RESTORE. Foreign sessions look valid on disk but fail API auth.
+  const session = decodeB64('ONCHAINOS_SESSION_B64');
+  if (session && (forceRestore || !fs.existsSync(sessionPath))) {
+    fs.writeFileSync(sessionPath, session);
+    console.log(
+      forceRestore
+        ? '[bootstrap] FORCE wrote session.json from ONCHAINOS_SESSION_B64'
+        : '[bootstrap] wrote session.json (none on volume)'
+    );
+  } else if (fs.existsSync(sessionPath)) {
+    console.log(
+      '[bootstrap] keeping existing session.json on volume (device-bound; not overwriting from laptop B64)'
+    );
+  } else {
+    console.warn('[bootstrap] no session.json on volume — need in-container login');
   }
 
   // Prefer Shiori Account 1 as selected account if present
   try {
-    const wPath = path.join(onHome, 'wallets.json');
-    if (fs.existsSync(wPath)) {
-      const w = JSON.parse(fs.readFileSync(wPath, 'utf8'));
+    if (fs.existsSync(walletsPath)) {
+      const w = JSON.parse(fs.readFileSync(walletsPath, 'utf8'));
       const shioriAcct = 'c08d7adc-60cf-41a4-8163-63e822176b43';
       if (w.accountsMap && w.accountsMap[shioriAcct]) {
         w.selectedAccountId = shioriAcct;
-        fs.writeFileSync(wPath, JSON.stringify(w));
+        fs.writeFileSync(walletsPath, JSON.stringify(w));
         console.log('[bootstrap] selectedAccountId set to Shiori Account 1');
       }
     }
@@ -64,9 +112,44 @@ function bootstrap() {
     console.warn('[bootstrap] could not pin selected account:', e.message);
   }
 
-  const ready =
-    fs.existsSync(path.join(onHome, 'session.json')) &&
-    fs.existsSync(path.join(onHome, 'wallets.json'));
+  const env = {
+    HOME: home,
+    ONCHAINOS_HOME: onHome,
+    OKX_AGENT_TASK_HOME: taskHome,
+  };
+
+  // In-container login: must run where okx-pilot TEE lives (Railway), not on laptop.
+  const email =
+    process.env.ONCHAINOS_LOGIN_EMAIL ||
+    process.env.ONCHAINOS_EMAIL ||
+    'oladipupos111@gmail.com';
+  const doLogin =
+    process.env.ONCHAINOS_DO_LOGIN === '1' || process.env.ONCHAINOS_DO_LOGIN === 'true';
+  const otp = (process.env.ONCHAINOS_OTP || '').trim();
+
+  if (doLogin) {
+    console.log('[bootstrap] ONCHAINOS_DO_LOGIN=1 → sending OTP to', email);
+    runOnchainos(['wallet', 'login', email, '--force', '--locale', 'en_US'], env);
+  }
+
+  if (otp) {
+    console.log('[bootstrap] ONCHAINOS_OTP set → verifying OTP on this host');
+    // Drop any foreign session so verify can write a native one
+    if (forceRestore === false && fs.existsSync(sessionPath) && process.env.ONCHAINOS_CLEAR_SESSION === '1') {
+      try {
+        fs.unlinkSync(sessionPath);
+        console.log('[bootstrap] cleared old session.json before verify');
+      } catch (e) {
+        console.warn('[bootstrap] could not clear session:', e.message);
+      }
+    }
+    runOnchainos(['wallet', 'verify', otp], env);
+    // Smoke-check
+    runOnchainos(['wallet', 'status'], env);
+    runOnchainos(['agent', 'get', '--page', '1', '--page-size', '5'], env);
+  }
+
+  const ready = fs.existsSync(sessionPath) && fs.existsSync(walletsPath);
   console.log('[bootstrap] ONCHAINOS_HOME=', onHome);
   console.log('[bootstrap] OKX_AGENT_TASK_HOME=', taskHome);
   console.log('[bootstrap] ready=', ready);
