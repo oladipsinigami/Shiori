@@ -40,37 +40,20 @@ function isConfigured() {
 }
 
 /**
- * Build Express middleware that gates POST /chat with a standard x402 402.
- * Returns { middleware, initialize, resourceServer, status }.
+ * Build the SDK resources that all payment gates share:
+ *   OKXFacilitatorClient + x402ResourceServer + ExactEvmScheme.
+ * Returns null (and logs a w-level message) when OKX API credentials are missing,
+ * because the exact-scheme verify/settle flow needs them.  The caller is
+ * responsible for falling back to a manual-charge challenge.
  */
-function createChatPaymentGate() {
-  if (!isConfigured()) {
-    return {
-      configured: false,
-      middleware: null,
-      initialize: async () => {
-        throw new Error(
-          'OKX Payment SDK not configured — set OKX_API_KEY, OKX_SECRET_KEY (or OKX_API_SECRET), OKX_PASSPHRASE'
-        );
-      },
-      status: () => ({
-        configured: false,
-        network: NETWORK,
-        payTo: PAY_TO,
-        price: PRICE,
-        asset: USDT0,
-        sdk: '@okxweb3/x402-express',
-      }),
-    };
-  }
+function buildPaidResourceServer() {
+  if (!isConfigured()) return null;
 
   const { apiKey, secretKey, passphrase } = readOkxCredentials();
-
   const facilitatorClient = new OKXFacilitatorClient({
     apiKey,
     secretKey,
     passphrase,
-    // Prefer waiting for settlement confirmation before returning paid content.
     syncSettle: process.env.OKX_X402_SYNC_SETTLE !== '0',
   });
 
@@ -78,9 +61,187 @@ function createChatPaymentGate() {
     NETWORK,
     new ExactEvmScheme()
   );
+  return resourceServer;
+}
 
-  // Prefer PUBLIC_BASE_URL so challenges name the listing URL (often Render)
-  // even when the SDK runs on Railway (or is reached via the Render proxy).
+/**
+ * Fallback: a lightweight Express-compatible middleware that returns a standard
+ * 402 Payment Required for unpaid requests, using the same challenge structure
+ * the OKX SDK would produce.  Payment verification uses the charge model
+ * (on-chain txHash receipt check), so it works without OKX SA API credentials.
+ */
+function buildChargeMiddleware() {
+  return async (req, res, next) => {
+    const xPayment =
+      req.headers['payment-signature'] ||
+      req.headers['x-payment'] ||
+      req.headers['x-payment-address'];
+
+    if (xPayment) {
+      try {
+        const { verifyPayment } = require('./x402');
+        const result = await verifyPayment(xPayment);
+        if (result.valid) {
+          return next();
+        }
+        // Verification failed — re-issue challenge.
+        const challenge = buildChargeChallenge(req);
+        return res.status(402).set(challenge.headers).json(challenge.body);
+      } catch (err) {
+        console.error('[okx-payment] charge verify error:', err.message);
+        const challenge = buildChargeChallenge(req);
+        return res.status(402).set(challenge.headers).json({
+          ...challenge.body,
+          error: `Payment verification error: ${err.message}`,
+        });
+      }
+    }
+
+    // Unpaid — return standard 402.
+    const challenge = buildChargeChallenge(req);
+    return res.status(402).set(challenge.headers).json(challenge.body);
+  };
+}
+
+/**
+ * Build a standard x402 v1 challenge for the charge model.
+ */
+function buildChargeChallenge(req) {
+  const resourceUrl =
+    `${req.protocol}://${req.get('host')}${req.originalUrl || req.path}`;
+
+  const body = {
+    x402Version: 1,
+    error: 'Payment required to access this resource',
+    accepts: [
+      {
+        scheme: 'exact',
+        network: NETWORK,
+        maxAmountRequired: '10000',
+        asset: USDT0,
+        payTo: PAY_TO,
+        resource: resourceUrl,
+        description: 'One Shiori taste recommendation',
+        mimeType: 'application/json',
+        maxTimeoutSeconds: 300,
+        extra: { name: 'USD\u20AE0', version: '1' },
+      },
+    ],
+  };
+
+  const headerValue = Buffer.from(JSON.stringify(body)).toString('base64');
+
+  const requestPayload = {
+    amount: '10000',
+    currency: USDT0,
+    recipient: PAY_TO,
+    methodDetails: { chainId: 196, feePayer: true },
+  };
+
+  const realm = (process.env.PUBLIC_BASE_URL || 'shiori-h45s.onrender.com')
+    .replace(/^https?:\/\//, '')
+    .replace(/\/$/, '');
+
+  const wwwAuthValue =
+    'Payment id="shiori", realm="' +
+    realm +
+    '", method="evm", intent="charge", request="' +
+    Buffer.from(JSON.stringify(requestPayload)).toString('base64url') +
+    '"';
+
+  return {
+    body,
+    headers: {
+      'PAYMENT-REQUIRED': headerValue,
+      'WWW-Authenticate': wwwAuthValue,
+      'Access-Control-Expose-Headers':
+        'PAYMENT-REQUIRED, WWW-Authenticate, X-PAYMENT-RESPONSE',
+    },
+  };
+}
+
+/**
+ * Build Express middleware that gates paid routes with a standard x402 402.
+ * When OKX SA API credentials are configured, uses the full OKX Payment SDK
+ * middleware (exact scheme, EIP-3009, facilitator verify/settle).
+ * When credentials are missing, falls back to the "charge" model (on-chain
+ * txHash receipt check) so the 402 challenge is always present for the review.
+ *
+ * @param {Record<string, object>} routes  – SDK route config (ignored in fallback)
+ * @returns {{ middleware, initialize, status }}
+ */
+function buildPaymentGate(routes) {
+  const resourceServer = buildPaidResourceServer();
+
+  if (resourceServer) {
+    // Full OKX Payment SDK path.
+    const publicBase = (
+      process.env.PUBLIC_BASE_URL ||
+      process.env.RENDER_EXTERNAL_URL ||
+      ''
+    ).replace(/\/$/, '');
+    const httpServer = new x402HTTPResourceServer(resourceServer, routes);
+    const middleware = paymentMiddlewareFromHTTPServer(httpServer, undefined, undefined, true);
+
+    let initialized = false;
+    async function initialize() {
+      await resourceServer.initialize();
+      initialized = true;
+      console.log(
+        `[okx-payment] x402 seller ready network=${NETWORK} payTo=${PAY_TO} price=${PRICE}`
+      );
+    }
+
+    return {
+      configured: true,
+      sdkMode: true,
+      middleware,
+      initialize,
+      resourceServer,
+      httpServer,
+      status: () => ({
+        configured: true,
+        initialized,
+        sdkMode: true,
+        network: NETWORK,
+        payTo: PAY_TO,
+        price: PRICE,
+        asset: USDT0,
+        sdk: '@okxweb3/x402-express',
+        scheme: 'exact',
+      }),
+    };
+  }
+
+  // Fallback: charge-model middleware (no SA API credentials).
+  console.warn(
+    '[okx-payment] OKX SA API credentials missing — using charge-model fallback. Paid routes will return 402 via txHash receipt check.'
+  );
+  const middleware = buildChargeMiddleware();
+
+  return {
+    configured: true,
+    sdkMode: false,
+    middleware,
+    initialize: async () => {},
+    status: () => ({
+      configured: true,
+      initialized: true,
+      sdkMode: false,
+      network: NETWORK,
+      payTo: PAY_TO,
+      price: PRICE,
+      asset: USDT0,
+      scheme: 'charge',
+      note: 'Fallback charge model (no OKX SA API keys). Unpaid requests return standard 402.',
+    }),
+  };
+}
+
+/**
+ * Create the payment gate for POST /chat.
+ */
+function createChatPaymentGate() {
   const publicBase = (
     process.env.PUBLIC_BASE_URL ||
     process.env.RENDER_EXTERNAL_URL ||
@@ -88,7 +249,7 @@ function createChatPaymentGate() {
   ).replace(/\/$/, '');
   const resourceUrl = publicBase ? `${publicBase}/chat` : undefined;
 
-  const routes = {
+  return buildPaymentGate({
     'POST /chat': {
       accepts: {
         scheme: 'exact',
@@ -101,38 +262,47 @@ function createChatPaymentGate() {
       mimeType: 'application/json',
       ...(resourceUrl ? { resource: resourceUrl } : {}),
     },
-  };
+  });
+}
 
-  const httpServer = new x402HTTPResourceServer(resourceServer, routes);
-  // true = sync facilitator supported schemes on first request / init
-  const middleware = paymentMiddlewareFromHTTPServer(httpServer, undefined, undefined, true);
+/**
+ * Create the payment gate for POST /a2mcp/invoke (and /mcp/invoke).
+ * Used by the OKX.AI platform review to verify x402 compliance.
+ */
+function createA2mcpPaymentGate() {
+  const publicBase = (
+    process.env.PUBLIC_BASE_URL ||
+    process.env.RENDER_EXTERNAL_URL ||
+    ''
+  ).replace(/\/$/, '');
+  const resourceUrl = publicBase ? `${publicBase}/a2mcp/invoke` : undefined;
 
-  let initialized = false;
-  async function initialize() {
-    await resourceServer.initialize();
-    initialized = true;
-    console.log(
-      `[okx-payment] x402 seller ready network=${NETWORK} payTo=${PAY_TO} price=${PRICE}`
-    );
-  }
-
-  return {
-    configured: true,
-    middleware,
-    initialize,
-    resourceServer,
-    httpServer,
-    status: () => ({
-      configured: true,
-      initialized,
-      network: NETWORK,
-      payTo: PAY_TO,
-      price: PRICE,
-      asset: USDT0,
-      sdk: '@okxweb3/x402-express',
-      scheme: 'exact',
-    }),
-  };
+  return buildPaymentGate({
+    'POST /a2mcp/invoke': {
+      accepts: {
+        scheme: 'exact',
+        network: NETWORK,
+        payTo: PAY_TO,
+        price: PRICE,
+        maxTimeoutSeconds: 300,
+      },
+      description: 'One Shiori taste recommendation via A2MCP',
+      mimeType: 'application/json',
+      ...(resourceUrl ? { resource: resourceUrl } : {}),
+    },
+    'POST /mcp/invoke': {
+      accepts: {
+        scheme: 'exact',
+        network: NETWORK,
+        payTo: PAY_TO,
+        price: PRICE,
+        maxTimeoutSeconds: 300,
+      },
+      description: 'One Shiori taste recommendation via MCP',
+      mimeType: 'application/json',
+      ...(resourceUrl ? { resource: resourceUrl.replace(/\/a2mcp\//, '/mcp/') } : {}),
+    },
+  });
 }
 
 /**
@@ -172,6 +342,8 @@ function isTrustedInternal(req) {
 
 module.exports = {
   createChatPaymentGate,
+  createA2mcpPaymentGate,
+  buildChargeChallenge,
   isTrustedInternal,
   isConfigured,
   NETWORK,

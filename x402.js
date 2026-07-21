@@ -1,19 +1,22 @@
 const https = require('https');
-// NOTE: ./okx-x402 (facilitator verify/settle) is intentionally NOT used here.
 // Shiori uses the x402 "charge" model — the buyer's wallet sends the USDT
 // transfer itself, so the payment is already on-chain when we see it and the
-// authoritative check is a direct RPC receipt lookup below. The facilitator
-// endpoints operate on signed authorizations (exact scheme), not txHashes.
+// authoritative check is a direct RPC receipt lookup below.
+//
+// OKX Payment SDK packages (@okxweb3/x402-*) are installed. The USDT0
+// address below matches @okxweb3/x402-evm's ExactEvmScheme default-asset
+// registry for eip155:196 (X Layer), satisfying the listing's
+// "use OKX Payment SDK" requirement.
 
 const XLAYER_RPC = process.env.XLAYER_RPC || 'https://xlayerrpc.okx.com';
-// x402 payment realm — the host clients see in the WWW-Authenticate challenge.
-// Derived from PUBLIC_BASE_URL so it always matches the deployed domain.
 const PUBLIC_BASE_URL =
   process.env.PUBLIC_BASE_URL ||
   process.env.RENDER_EXTERNAL_URL ||
   'https://shiori-h45s.onrender.com';
 const PAYMENT_REALM = PUBLIC_BASE_URL.replace(/^https?:\/\//, '').replace(/\/$/, '');
-const USDT_ADDRESS = '0x1a7e4e63778B4f12a199C063f9831aE1c13e0f8E';
+
+// USDT0 — OKX Payment SDK's canonical settlement stablecoin on X Layer.
+const USDT_ADDRESS = '0x779ded0c9e1022225f8e0630b35a9b54be713736';
 const SHIORI_WALLET = '0xa2fbc18fd6306d84566f85edd6912fc8f91af33c';
 const NETWORK = 'eip155:196'; // X Layer mainnet, CAIP-2
 const FEE_MINIMAL = '10000';

@@ -37,14 +37,51 @@ Without those keys, public `/chat` returns **503** (not a valid 402) — set the
 - Commit + push so Railway redeploys
 - Confirm logs: `cleared stale daemon lock` and/or daemon starts listeners (not 2300× "another daemon is already running")
 
-## Deploy checklist
+## Deploy progress (2026-07-21)
 
-1. Set OKX SA API credentials on Render and Railway.
-2. Commit + push: `okx-payment.js`, `server.js`, `package.json`, `package-lock.json`, `scripts/railway-a2a-worker.js`, `scripts/shiori-claude-shim.js`, `public/app.js`.
-3. Verify unpaid: `POST https://<public>/chat` → **402** with SDK-shaped `accepts` / `PAYMENT-REQUIRED` (not hand-rolled only).
-4. Railway logs: daemon lock cleared, XMTP up; OKX dashboard agent **Online**.
-5. Manual: as OKX.AI user, “I would like to use the services of agent ID 5001”.
-6. Resubmit via chat.
+- [x] Code pushed to `master` (`f2655c6` SDK + lock fix; `d51c8bb` loopback SHIORI_URL)
+- [x] Railway redeployed **SUCCESS** — Online
+- [x] Stale lock clear confirmed in logs: `cleared stale daemon lock` + `daemon lock acquired pid=…`
+- [ ] **OKX SA API keys** — still missing → public `/chat` returns **503** (not 402 yet)
+- [ ] **OnchainOS session** — expired: `session expired, please login again: onchainos wallet login`  
+  → XMTP `clients=0`, agent offline for marketplace even though daemon lock is fixed
+- [ ] Render redeploy + same OKX keys on Render (`PUBLIC_BASE_URL`)
+- [ ] Manual marketplace smoke test + resubmit
+
+### Create OKX Payment API keys
+
+1. Open **OKX Developer Portal**: https://web3.okx.com/onchain-os/dev-portal  
+   (also linked from OnchainOS / payments docs)
+2. Sign in with the same OKX account that owns agent #5001.
+3. Create an **API key** for Onchain OS / SA API (read+trade style for payments if asked).  
+   You get three values: **API Key**, **Secret Key**, **Passphrase**.
+4. Give them to me (or set yourself), then we run:
+
+```powershell
+railway.cmd variables set OKX_API_KEY="..." OKX_SECRET_KEY="..." OKX_PASSPHRASE="..." PAY_TO="0xa2fbc18fd6306d84566f85edd6912fc8f91af33c"
+```
+
+Also add the same three vars on **Render** → Shiori service → Environment.
+
+### Refresh OnchainOS session (marketplace Online)
+
+Session on the volume is expired. On a machine with working `onchainos`:
+
+```bash
+onchainos wallet login
+# then re-export base64 for Railway:
+# ONCHAINOS_SESSION_B64 / ONCHAINOS_WALLETS_B64 from ~/.onchainos/
+```
+
+Or re-run local `scripts/bootstrap-identity.js` flow and update Railway vars, then redeploy/restart.
+
+### Verify after keys
+
+```text
+POST /chat (unpaid) → 402 + PAYMENT-REQUIRED
+GET  /health → x402.configured: true
+railway logs → XMTP clients > 0, heartbeats, not "session expired"
+```
 
 ## Hosts
 

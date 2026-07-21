@@ -14,6 +14,7 @@ const {
 } = require('./a2a');
 const {
   createChatPaymentGate,
+  createA2mcpPaymentGate,
   isTrustedInternal,
   PAY_TO,
   PRICE,
@@ -49,6 +50,7 @@ app.use((req, res, next) => {
 });
 
 const paymentGate = createChatPaymentGate();
+const a2mcpPaymentGate = createA2mcpPaymentGate();
 
 // --- Health / debug / discovery (free) ---
 
@@ -60,6 +62,7 @@ app.get(['/health', '/ready'], (_req, res) => {
     publicUrl: PUBLIC_BASE_URL,
     okxAgentId: process.env.OKX_AGENT_ID || '5001',
     x402: paymentGate.status(),
+    a2mcp_x402: a2mcpPaymentGate.status(),
   });
 });
 
@@ -74,6 +77,7 @@ app.get('/debug', (_req, res) => {
     ),
     nodeVersion: process.version,
     x402: paymentGate.status(),
+    a2mcp_x402: a2mcpPaymentGate.status(),
   });
 });
 
@@ -233,11 +237,30 @@ app.get('/a2a/tasks/:id', (req, res) => {
   });
 });
 
-app.post(['/a2mcp/invoke', '/mcp/invoke'], async (req, res) => {
+async function a2mcpMiddleware(req, res, next) {
+  if (res.headersSent) return;
+  if (isTrustedInternal(req)) {
+    return next();
+  }
+  if (!a2mcpPaymentGate.configured || !a2mcpPaymentGate.middleware) {
+    return res.status(503).json({
+      error:
+        'x402 Payment SDK not configured. Set OKX_API_KEY, OKX_SECRET_KEY, OKX_PASSPHRASE on the host.',
+    });
+  }
+  // The SDK middleware / charge fallback will either call next() on
+  // verified payment or send a 402 response directly.
+  return a2mcpPaymentGate.middleware(req, res, next);
+}
+
+app.post(['/a2mcp/invoke', '/mcp/invoke'], a2mcpMiddleware, async (req, res) => {
+  if (res.headersSent) return;
   try {
     const result = await handleA2mcpInvoke(req.body);
+    if (res.headersSent) return;
     res.json(result);
   } catch (err) {
+    if (res.headersSent) return;
     res.status(500).json({ error: err.message || 'A2MCP invoke failed' });
   }
 });
@@ -304,26 +327,33 @@ app.use((err, _req, res, _next) => {
 });
 
 async function start() {
-  if (paymentGate.configured) {
-    try {
-      await paymentGate.initialize();
-    } catch (err) {
-      console.error('[okx-payment] initialize failed:', err.message);
-      console.error(
-        '[okx-payment] Unpaid /chat will still attempt SDK middleware; fix credentials if 502 appears.'
+  for (const [label, gate] of [
+    ['chat', paymentGate],
+    ['a2mcp', a2mcpPaymentGate],
+  ]) {
+    if (gate.configured) {
+      try {
+        await gate.initialize();
+      } catch (err) {
+        console.error(`[okx-payment] ${label} initialize failed:`, err.message);
+      }
+    } else {
+      console.warn(
+        `[okx-payment] ${label}: OKX API credentials missing. Unpaid requests return 503 until OKX_API_KEY + OKX_SECRET_KEY + OKX_PASSPHRASE are set.`
       );
     }
-  } else {
-    console.warn(
-      '[okx-payment] WARNING: OKX API credentials missing. Public unpaid /chat returns 503 until OKX_API_KEY + OKX_SECRET_KEY + OKX_PASSPHRASE are set.'
-    );
   }
 
   app.listen(PORT, () => {
     console.log(`Shiori listening on port ${PORT}`);
     console.log(`Public URL: ${PUBLIC_BASE_URL}`);
     console.log(`Agent card: ${PUBLIC_BASE_URL.replace(/\/$/, '')}/.well-known/agent.json`);
-    console.log(`x402: ${paymentGate.configured ? 'OKX Payment SDK enabled on POST /chat' : 'NOT CONFIGURED'}`);
+    console.log(
+      `x402 /chat:  ${paymentGate.configured ? 'SDK enabled (exact)' : 'fallback charge model'}`
+    );
+    console.log(
+      `x402 /a2mcp: ${a2mcpPaymentGate.configured ? 'SDK enabled (exact)' : 'fallback charge model'}`
+    );
   });
 }
 
