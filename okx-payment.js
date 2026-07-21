@@ -79,6 +79,15 @@ function createChatPaymentGate() {
     new ExactEvmScheme()
   );
 
+  // Prefer PUBLIC_BASE_URL so challenges name the listing URL (often Render)
+  // even when the SDK runs on Railway (or is reached via the Render proxy).
+  const publicBase = (
+    process.env.PUBLIC_BASE_URL ||
+    process.env.RENDER_EXTERNAL_URL ||
+    ''
+  ).replace(/\/$/, '');
+  const resourceUrl = publicBase ? `${publicBase}/chat` : undefined;
+
   const routes = {
     'POST /chat': {
       accepts: {
@@ -90,6 +99,7 @@ function createChatPaymentGate() {
       },
       description: 'One Shiori taste recommendation',
       mimeType: 'application/json',
+      ...(resourceUrl ? { resource: resourceUrl } : {}),
     },
   };
 
