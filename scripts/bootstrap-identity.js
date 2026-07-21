@@ -135,7 +135,11 @@ function bootstrap() {
   if (doLogin) {
     // Prefer API-key login when OKX_API_KEY / SECRET / PASSPHRASE are present
     // (no OTP, works inside the container). Fall back to email OTP otherwise.
+    // Payment SDK keys are often a *different* OKX project than the agentic
+    // wallet that owns Shiori #5001. Prefer email login unless explicitly AK.
+    const loginMode = (process.env.ONCHAINOS_LOGIN_MODE || 'email').toLowerCase();
     const hasAk =
+      loginMode === 'ak' &&
       process.env.OKX_API_KEY &&
       (process.env.OKX_SECRET_KEY || process.env.OKX_API_SECRET) &&
       (process.env.OKX_PASSPHRASE || process.env.OKX_API_PASSPHRASE);
