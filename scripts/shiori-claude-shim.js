@@ -73,9 +73,16 @@ async function main() {
   const userId = userIdFrom(resume, print);
   const message = String(print).trim();
 
+  // Marketplace XMTP → brain must not hit public x402. Loopback is trusted by
+  // server.js; optional SHIORI_INTERNAL_KEY covers non-loopback SHIORI_URL hops.
+  const headers = { 'Content-Type': 'application/json' };
+  if (process.env.SHIORI_INTERNAL_KEY) {
+    headers['X-Shiori-Internal-Key'] = process.env.SHIORI_INTERNAL_KEY;
+  }
+
   const res = await fetch(`${SHIORI_URL}/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ userId, message })
   });
 

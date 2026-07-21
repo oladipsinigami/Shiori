@@ -1,4 +1,6 @@
 .env
+*.secrets.env
+railway-identity.env
 node_modules/
 data/profiles/
 logs/

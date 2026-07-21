@@ -72,6 +72,31 @@ function bootstrapIdentity() {
   return state.identityReady;
 }
 
+// Clear any daemon lock left on the persistent volume by a previous container.
+//
+// okx-a2a stores its lock at <TASK_HOME>/run/daemon.lock/owner.json and decides
+// the lock is held if the pid inside is alive (process.kill(pid, 0)). That lock
+// lives on the /data volume and survives restarts, but pids reset each container —
+// so the old daemon's pid gets reused by an unrelated process and the lock looks
+// "held" forever, making every daemon start exit before opening XMTP listeners.
+//
+// We run this once at worker boot, before startOkxA2a(), so no daemon we manage
+// is running yet and we can never delete a live daemon's lock.
+function clearStaleDaemonLock() {
+  const lockDir = path.join(TASK_HOME, 'run', 'daemon.lock');
+  const pidFile = path.join(TASK_HOME, 'run', 'listener.pid');
+  for (const target of [lockDir, pidFile]) {
+    try {
+      if (fs.existsSync(target)) {
+        fs.rmSync(target, { recursive: true, force: true });
+        log('cleared stale daemon lock artifact:', target);
+      }
+    } catch (e) {
+      log('could not clear', target, '-', e.message);
+    }
+  }
+}
+
 async function pingShiori() {
   try {
     const res = await fetch(`${SHIORI_URL}/health`, { cache: 'no-store' });
@@ -229,6 +254,7 @@ server.listen(PORT, () => {
   log(`OKX_A2A_ENABLE=${A2A_ENABLE}`);
   log(`HOME=${HOME} TASK_HOME=${TASK_HOME}`);
   bootstrapIdentity();
+  clearStaleDaemonLock();
   pingShiori();
   setInterval(pingShiori, KEEP_ALIVE_MS);
   startOkxA2a();

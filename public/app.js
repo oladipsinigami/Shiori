@@ -29,7 +29,7 @@
     return div;
   }
 
-  addBubble('agent', "Hi — I'm Shiori. Connect your wallet above to get started (0.01 USDT per request on XLayer).");
+  addBubble('agent', "Hi — I'm Shiori. 0.01 USD₮0 per request on X Layer (x402 exact via OKX Payment SDK). Hire agent #5001 on OKX.AI, or connect a wallet for the site demo.");
 
   async function refreshHealth() {
     try {
@@ -130,12 +130,16 @@
       return;
     }
 
-    const token = '0x1a7e4e63778B4f12a199C063f9831aE1c13e0f8E';
+    // Official OKX path is gasless EIP-3009 (exact) via the OKX Payment SDK /
+    // onchainos payment quote·pay — not a raw ERC-20 transfer. The site still
+    // offers a simple USD₮0 transfer for demos; prefer hiring agent #5001 on OKX.AI.
+    const token = '0x779Ded0c9e1022225f8E0630b35a9b54bE713736';
     const payTo = '0xa2fbc18fd6306d84566f85edd6912fc8f91af33c';
     const amount = '10000';
 
     try {
-      addBubble('system', 'Sending 0.01 USDT to Shiori on XLayer...');
+      addBubble('system', 'Sending 0.01 USD₮0 to Shiori on XLayer (demo transfer)...');
+      addBubble('system', 'Tip: full x402 exact payments work best via OKX.AI (agent #5001).');
 
       const txHash = await ethereum.request({
         method: 'eth_sendTransaction',
@@ -150,7 +154,7 @@
 
       addBubble('system', 'Tx submitted: ' + txHash.slice(0, 10) + '... Waiting for confirmation...');
       await waitForTx(txHash);
-      addBubble('system', 'Payment confirmed! Getting recommendations...');
+      addBubble('system', 'On-chain transfer confirmed. Retrying chat with payment proof...');
 
       const paymentHeader = btoa(JSON.stringify({ txHash, payer: walletAddress }));
       await doChat(message, paymentHeader);
@@ -171,8 +175,8 @@
 
     if (res.status === 402) {
       const data = await res.json().catch(() => ({}));
-      addBubble('system', 'Payment required — 0.01 USDT on XLayer');
-      const payDiv = addBubble('system', '💳 Click to pay 0.01 USDT and continue', true);
+      addBubble('system', 'Payment required — 0.01 USD₮0 on X Layer (x402)');
+      const payDiv = addBubble('system', '💳 Click to pay 0.01 USD₮0 and continue', true);
       payDiv.style.cursor = 'pointer';
       payDiv.style.border = '1px solid var(--accent)';
       payDiv.style.padding = '0.75rem 1rem';

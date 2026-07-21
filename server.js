@@ -1,5 +1,5 @@
 require('dotenv').config();
-const http = require('http');
+const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const { runObito } = require('./obito-core');
@@ -10,333 +10,251 @@ const {
   handleA2mcpInvoke,
   a2mcpTools,
   getTask,
-  PUBLIC_BASE_URL
+  PUBLIC_BASE_URL,
 } = require('./a2a');
-const { generateChallenge, verifyPayment, SHIORI_WALLET, USDT_ADDRESS, FEE_HUMAN } = require('./x402');
+const {
+  createChatPaymentGate,
+  isTrustedInternal,
+  PAY_TO,
+  PRICE,
+  USDT0,
+  NETWORK,
+} = require('./okx-payment');
 
 const PORT = process.env.PORT || 3000;
 const publicDir = path.join(__dirname, 'public');
 
-const MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.js': 'application/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon',
-  '.webp': 'image/webp',
-  '.mp4': 'video/mp4',
-  '.webm': 'video/webm',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2'
-};
+const app = express();
+// Trust proxy so req.ip / protocol are correct behind Render/Railway.
+app.set('trust proxy', true);
 
-function sendJson(res, status, body, extraHeaders) {
-  const payload = JSON.stringify(body);
-  const headers = {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-payment, x-payment-address',
-    'Access-Control-Expose-Headers': 'PAYMENT-REQUIRED, WWW-Authenticate, X-PAYMENT-RESPONSE',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    ...extraHeaders,
-  };
-  res.writeHead(status, headers);
-  res.end(payload);
-}
+app.use(express.json({ limit: '2mb' }));
 
-function sendText(res, status, text, contentType = 'text/plain; charset=utf-8') {
-  res.writeHead(status, {
-    'Content-Type': contentType,
-    'Access-Control-Allow-Origin': '*'
-  });
-  res.end(text);
-}
-
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    let body = '';
-    req.on('data', (chunk) => {
-      body += chunk;
-      if (body.length > 2_000_000) {
-        reject(new Error('Request body too large'));
-        req.destroy();
-      }
-    });
-    req.on('end', () => resolve(body));
-    req.on('error', reject);
-  });
-}
-
-function parseJsonSafe(raw) {
-  if (!raw || !raw.trim()) return {};
-  return JSON.parse(raw);
-}
-
-function serveStatic(req, res, urlPath) {
-  let rel = urlPath === '/' ? '/index.html' : urlPath;
-  rel = decodeURIComponent(rel.split('?')[0]);
-  if (rel.includes('..')) {
-    return sendJson(res, 400, { error: 'Invalid path' });
-  }
-
-  const filePath = path.join(publicDir, rel);
-  if (!filePath.startsWith(publicDir)) {
-    return sendJson(res, 400, { error: 'Invalid path' });
-  }
-  if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
-    return false;
-  }
-
-  const ext = path.extname(filePath).toLowerCase();
-  const type = MIME[ext] || 'application/octet-stream';
-  const stat = fs.statSync(filePath);
-
-  // Honor HTTP Range requests so <video> playback works (iOS Safari requires
-  // 206 partial responses to start/seek media).
-  const range = req.headers.range;
-  if (range) {
-    const match = /bytes=(\d*)-(\d*)/.exec(range);
-    if (match) {
-      const start = match[1] ? parseInt(match[1], 10) : 0;
-      const end = match[2] ? parseInt(match[2], 10) : stat.size - 1;
-      if (start <= end && end < stat.size) {
-        res.writeHead(206, {
-          'Content-Type': type,
-          'Content-Range': `bytes ${start}-${end}/${stat.size}`,
-          'Accept-Ranges': 'bytes',
-          'Content-Length': end - start + 1,
-          'Access-Control-Allow-Origin': '*',
-        });
-        fs.createReadStream(filePath, { start, end }).pipe(res);
-        return true;
-      }
-    }
-  }
-
-  res.writeHead(200, {
-    'Content-Type': type,
-    'Content-Length': stat.size,
-    'Accept-Ranges': 'bytes',
-    'Access-Control-Allow-Origin': '*',
-  });
-  fs.createReadStream(filePath).pipe(res);
-  return true;
-}
-
-const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  const pathname = url.pathname;
-
+// CORS for browser + x402 payment headers (SDK uses PAYMENT-SIGNATURE / X-PAYMENT).
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization, X-PAYMENT, PAYMENT-SIGNATURE, X-PAYMENT-RESPONSE, X-Shiori-Internal-Key'
+  );
+  res.setHeader(
+    'Access-Control-Expose-Headers',
+    'PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-PAYMENT-RESPONSE, WWW-Authenticate'
+  );
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-payment, x-payment-address',
-    });
-    return res.end();
+    return res.status(204).end();
   }
+  next();
+});
 
+const paymentGate = createChatPaymentGate();
+
+// --- Health / debug / discovery (free) ---
+
+app.get(['/health', '/ready'], (_req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'shiori',
+    a2a: true,
+    publicUrl: PUBLIC_BASE_URL,
+    okxAgentId: process.env.OKX_AGENT_ID || '5001',
+    x402: paymentGate.status(),
+  });
+});
+
+app.get('/debug', (_req, res) => {
+  res.json({
+    hasOpenRouterKey: !!process.env.OPENROUTER_API_KEY,
+    hasModel: !!process.env.OPENROUTER_MODEL,
+    publicUrl: PUBLIC_BASE_URL,
+    xlayerRpc: (process.env.XLAYER_RPC || 'https://xlayerrpc.okx.com').replace(
+      /^https?:\/\//,
+      '...'
+    ),
+    nodeVersion: process.version,
+    x402: paymentGate.status(),
+  });
+});
+
+app.get('/payment-info', (_req, res) => {
+  res.json({
+    payTo: PAY_TO,
+    token: USDT0,
+    symbol: 'USD₮0',
+    chain: 'XLayer (eip155:196)',
+    network: NETWORK,
+    amount: PRICE,
+    scheme: 'exact',
+    sdk: '@okxweb3/x402-express',
+    note: 'Unpaid POST /chat returns a standard x402 402 via the OKX Payment SDK.',
+  });
+});
+
+app.get(
+  [
+    '/.well-known/agent.json',
+    '/.well-known/agent-card.json',
+    '/agent-card',
+    '/a2a/agent-card',
+  ],
+  (_req, res) => {
+    res.json(agentCard());
+  }
+);
+
+app.get(['/a2mcp/tools', '/mcp/tools'], (_req, res) => {
+  res.json(a2mcpTools());
+});
+
+// --- Paid brain: POST /chat (OKX x402 Payment SDK) ---
+
+async function chatHandler(req, res) {
+  const { userId, message } = req.body || {};
+  if (!userId || !message) {
+    return res.status(400).json({ error: 'Both "userId" and "message" are required' });
+  }
   try {
-    if (req.method === 'GET' && (pathname === '/health' || pathname === '/ready')) {
-      return sendJson(res, 200, {
-        status: 'ok',
-        service: 'shiori',
-        a2a: true,
-        publicUrl: PUBLIC_BASE_URL,
-        okxAgentId: process.env.OKX_AGENT_ID || '5001'
-      });
-    }
-
-    if (req.method === 'GET' && pathname === '/debug') {
-      return sendJson(res, 200, {
-        hasOpenRouterKey: !!process.env.OPENROUTER_API_KEY,
-        hasModel: !!process.env.OPENROUTER_MODEL,
-        publicUrl: PUBLIC_BASE_URL,
-        xlayerRpc: (process.env.XLAYER_RPC || 'https://xlayerrpc.okx.com').replace(/^https?:\/\//, '...'),
-        nodeVersion: process.version,
-      });
-    }
-
-    if (req.method === 'GET' && pathname === '/payment-info') {
-      return sendJson(res, 200, {
-        payTo: SHIORI_WALLET,
-        token: USDT_ADDRESS,
-        chain: 'XLayer (eip155:196)',
-        amount: FEE_HUMAN,
-        symbol: 'USDT',
-      });
-    }
-
-    if (
-      req.method === 'GET' &&
-      (pathname === '/.well-known/agent.json' ||
-        pathname === '/.well-known/agent-card.json' ||
-        pathname === '/agent-card' ||
-        pathname === '/a2a/agent-card')
-    ) {
-      return sendJson(res, 200, agentCard());
-    }
-
-    if (req.method === 'GET' && (pathname === '/a2mcp/tools' || pathname === '/mcp/tools')) {
-      return sendJson(res, 200, a2mcpTools());
-    }
-
-    if (req.method === 'POST' && pathname === '/chat') {
-      const xPayment = req.headers['x-payment'];
-
-      // Absolute URL of this paid resource, for the challenge's `resource` field.
-      const proto = (req.headers['x-forwarded-proto'] || '').split(',')[0].trim() ||
-        (req.socket && req.socket.encrypted ? 'https' : 'http');
-      const host = req.headers['x-forwarded-host'] || req.headers.host || '';
-      const resourceUrl = host ? `${proto}://${host}/chat` : undefined;
-
-      let settlementHeader;
-
-      if (xPayment) {
-        const payResult = await verifyPayment(xPayment);
-        if (!payResult.valid) {
-          // Re-issue the challenge alongside the failure so clients can retry.
-          const { body, headerValue, wwwAuthValue } = generateChallenge(resourceUrl);
-          return sendJson(res, 402, {
-            ...body,
-            error: `Payment verification failed: ${payResult.reason}`,
-          }, {
-            'PAYMENT-REQUIRED': headerValue,
-            'WWW-Authenticate': wwwAuthValue,
-          });
-        }
-        if (payResult.settlement) {
-          settlementHeader = Buffer.from(JSON.stringify(payResult.settlement)).toString('base64');
-        }
-      } else {
-        // Unpaid request → standard x402 402 challenge. Body IS the challenge
-        // (x402Version / error / accepts at top level) per the x402 v1 spec.
-        const { body, headerValue, wwwAuthValue } = generateChallenge(resourceUrl);
-        return sendJson(res, 402, body, {
-          'PAYMENT-REQUIRED': headerValue,
-          'WWW-Authenticate': wwwAuthValue,
-        });
-      }
-
-      const raw = await readBody(req);
-      let parsed;
-      try {
-        parsed = parseJsonSafe(raw);
-      } catch {
-        return sendJson(res, 400, { error: 'Invalid JSON body' });
-      }
-      const { userId, message } = parsed;
-      if (!userId || !message) {
-        return sendJson(res, 400, { error: 'Both "userId" and "message" are required' });
-      }
-      try {
-        const { text, recIds } = await runObito(userId, message);
-        // On success, echo settlement back in the standard X-PAYMENT-RESPONSE header.
-        const extraHeaders = settlementHeader ? { 'X-PAYMENT-RESPONSE': settlementHeader } : undefined;
-        return sendJson(res, 200, { response: text, recIds }, extraHeaders);
-      } catch (err) {
-        console.error('/chat LLM error:', err.message, err.stack);
-        return sendJson(res, 500, { error: err.message || 'LLM call failed' });
-      }
-    }
-
-    if (req.method === 'POST' && (pathname === '/a2a/tasks' || pathname === '/a2a/message')) {
-      const raw = await readBody(req);
-      let parsed;
-      try {
-        parsed = parseJsonSafe(raw);
-      } catch {
-        return sendJson(res, 400, { error: 'Invalid JSON body' });
-      }
-      const result = await handleRestTask({ ...parsed, source: 'a2a-rest' });
-      return sendJson(res, 200, result);
-    }
-
-    if (req.method === 'GET' && pathname.startsWith('/a2a/tasks/')) {
-      const id = pathname.slice('/a2a/tasks/'.length);
-      const task = getTask(id);
-      if (!task) return sendJson(res, 404, { error: 'Task not found' });
-      return sendJson(res, 200, {
-        taskId: task.id,
-        status: task.state,
-        response: task.statusMessage,
-        recIds: task.metadata?.recIds || []
-      });
-    }
-
-    if (req.method === 'POST' && (pathname === '/a2mcp/invoke' || pathname === '/mcp/invoke')) {
-      const raw = await readBody(req);
-      let parsed;
-      try {
-        parsed = parseJsonSafe(raw);
-      } catch {
-        return sendJson(res, 400, { error: 'Invalid JSON body' });
-      }
-      const result = await handleA2mcpInvoke(parsed);
-      return sendJson(res, 200, result);
-    }
-
-    if (req.method === 'POST' && (pathname === '/' || pathname === '/a2a' || pathname === '/a2a/jsonrpc')) {
-      const raw = await readBody(req);
-      let parsed;
-      try {
-        parsed = parseJsonSafe(raw);
-      } catch {
-        return sendJson(res, 400, { error: 'Invalid JSON body' });
-      }
-
-      if (parsed && parsed.jsonrpc === '2.0' && parsed.method) {
-        const rpc = await handleJsonRpc(parsed);
-        return sendJson(res, 200, rpc);
-      }
-
-      if (pathname === '/a2a' || pathname === '/a2a/jsonrpc') {
-        const result = await handleRestTask({ ...parsed, source: 'a2a-rest' });
-        return sendJson(res, 200, result);
-      }
-
-      return sendJson(res, 404, {
-        error: 'Not found. Use GET / for the site, POST /chat, or A2A JSON-RPC.'
-      });
-    }
-
-    if (req.method === 'GET') {
-      if (serveStatic(req, res, pathname)) return;
-      if (pathname === '/preview' || pathname === '/try') {
-        if (serveStatic(req, res, '/index.html')) return;
-      }
-    }
-
-    return sendJson(res, 404, {
-      error: 'Not found',
-      endpoints: {
-        site: 'GET /',
-        health: 'GET /health',
-        chat: 'POST /chat { userId, message }',
-        paymentInfo: 'GET /payment-info',
-        agentCard: 'GET /.well-known/agent.json',
-        a2aTask: 'POST /a2a/tasks { message, userId? }',
-        a2aRpc: 'POST /a2a  JSON-RPC message/send',
-        a2mcpTools: 'GET /a2mcp/tools',
-        a2mcpInvoke: 'POST /a2mcp/invoke { message, userId? }'
-      }
-    });
+    const { text, recIds } = await runObito(userId, message);
+    return res.json({ response: text, recIds });
   } catch (err) {
-    console.error('Request error:', err.message);
-    console.error('Stack:', err.stack);
-    const status = err.status || 500;
-    return sendJson(res, status, {
-      error: err.message || 'Internal error'
+    console.error('/chat LLM error:', err.message, err.stack);
+    return res.status(500).json({ error: err.message || 'LLM call failed' });
+  }
+}
+
+// Internal marketplace worker (loopback / shared secret) skips x402.
+// Public clients get the OKX SDK standard 402 challenge when unpaid.
+app.post('/chat', (req, res, next) => {
+  if (isTrustedInternal(req)) {
+    return next();
+  }
+  if (!paymentGate.configured || !paymentGate.middleware) {
+    return res.status(503).json({
+      error:
+        'x402 Payment SDK not configured. Set OKX_API_KEY, OKX_SECRET_KEY, OKX_PASSPHRASE on the host.',
     });
+  }
+  return paymentGate.middleware(req, res, next);
+}, chatHandler);
+
+// --- A2A / A2MCP HTTP surface (free — marketplace XMTP uses shim → /chat) ---
+
+app.post(['/a2a/tasks', '/a2a/message'], async (req, res) => {
+  try {
+    const result = await handleRestTask({ ...req.body, source: 'a2a-rest' });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'A2A task failed' });
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`Shiori listening on port ${PORT}`);
-  console.log(`Public URL: ${PUBLIC_BASE_URL}`);
-  console.log(`Agent card: ${PUBLIC_BASE_URL.replace(/\/$/, '')}/.well-known/agent.json`);
+app.get('/a2a/tasks/:id', (req, res) => {
+  const task = getTask(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  res.json({
+    taskId: task.id,
+    status: task.state,
+    response: task.statusMessage,
+    recIds: task.metadata?.recIds || [],
+  });
+});
+
+app.post(['/a2mcp/invoke', '/mcp/invoke'], async (req, res) => {
+  try {
+    const result = await handleA2mcpInvoke(req.body);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'A2MCP invoke failed' });
+  }
+});
+
+app.post(['/', '/a2a', '/a2a/jsonrpc'], async (req, res) => {
+  const parsed = req.body;
+  try {
+    if (parsed && parsed.jsonrpc === '2.0' && parsed.method) {
+      return res.json(await handleJsonRpc(parsed));
+    }
+    if (req.path === '/a2a' || req.path === '/a2a/jsonrpc') {
+      return res.json(await handleRestTask({ ...parsed, source: 'a2a-rest' }));
+    }
+    return res.status(404).json({
+      error: 'Not found. Use GET / for the site, POST /chat, or A2A JSON-RPC.',
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'RPC failed' });
+  }
+});
+
+// --- Static site (Range support for video) ---
+
+app.get(['/preview', '/try'], (_req, res) => {
+  res.sendFile(path.join(publicDir, 'index.html'));
+});
+
+app.use(express.static(publicDir, {
+  // Let express.static handle ranges for media by default in recent Express.
+  acceptRanges: true,
+  setHeaders(res) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  },
+}));
+
+// Fallback 404 JSON for API-ish paths
+app.use((req, res) => {
+  if (req.method === 'GET' && !req.path.startsWith('/api')) {
+    // SPA-ish: unknown paths without extension → index
+    if (!path.extname(req.path)) {
+      return res.sendFile(path.join(publicDir, 'index.html'));
+    }
+  }
+  res.status(404).json({
+    error: 'Not found',
+    endpoints: {
+      site: 'GET /',
+      health: 'GET /health',
+      chat: 'POST /chat { userId, message }  (x402-gated via OKX Payment SDK)',
+      paymentInfo: 'GET /payment-info',
+      agentCard: 'GET /.well-known/agent.json',
+      a2aTask: 'POST /a2a/tasks { message, userId? }',
+      a2aRpc: 'POST /a2a  JSON-RPC message/send',
+      a2mcpTools: 'GET /a2mcp/tools',
+      a2mcpInvoke: 'POST /a2mcp/invoke { message, userId? }',
+    },
+  });
+});
+
+app.use((err, _req, res, _next) => {
+  console.error('Request error:', err.message);
+  console.error('Stack:', err.stack);
+  res.status(err.status || 500).json({ error: err.message || 'Internal error' });
+});
+
+async function start() {
+  if (paymentGate.configured) {
+    try {
+      await paymentGate.initialize();
+    } catch (err) {
+      console.error('[okx-payment] initialize failed:', err.message);
+      console.error(
+        '[okx-payment] Unpaid /chat will still attempt SDK middleware; fix credentials if 502 appears.'
+      );
+    }
+  } else {
+    console.warn(
+      '[okx-payment] WARNING: OKX API credentials missing. Public unpaid /chat returns 503 until OKX_API_KEY + OKX_SECRET_KEY + OKX_PASSPHRASE are set.'
+    );
+  }
+
+  app.listen(PORT, () => {
+    console.log(`Shiori listening on port ${PORT}`);
+    console.log(`Public URL: ${PUBLIC_BASE_URL}`);
+    console.log(`Agent card: ${PUBLIC_BASE_URL.replace(/\/$/, '')}/.well-known/agent.json`);
+    console.log(`x402: ${paymentGate.configured ? 'OKX Payment SDK enabled on POST /chat' : 'NOT CONFIGURED'}`);
+  });
+}
+
+start().catch((err) => {
+  console.error('Failed to start Shiori:', err);
+  process.exit(1);
 });
