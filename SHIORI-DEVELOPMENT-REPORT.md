@@ -34,6 +34,10 @@
 | `public/styles.css` | Frontend styling |
 | `render.yaml` | Render Blueprint configuration |
 | `package.json` | Node.js project config |
+| `scripts/shiori-claude-shim.js` | Claude CLI shim for okx-a2a daemon |
+| `scripts/railway-a2a-worker.js` | Railway always-on A2A worker |
+| `scripts/bootstrap-identity.js` | OnchainOS identity restoration |
+| `.gitattributes` | Forces LF line endings for shell scripts |
 
 ---
 
@@ -66,11 +70,11 @@
 | **Wallet Address** | `0xa2fbc18fd6306d84566f85edd6912fc8f91af33c` |
 | **Service Type** | A2MCP (API service — pay-per-call, website-interactive) |
 | **Service Name** | Media Recommendations |
-| **Fee** | 0.01 USDT per request |
+| **Fee** | 0.001 USDT per request (on-chain registration; x402 gate requires 10000 units = $0.01 — discrepancy noted) |
 | **Endpoint** | `<PUBLIC_BASE_URL>/chat` (Railway public domain) |
 | **Payment** | x402 — `WWW-Authenticate: Payment` + `PAYMENT-REQUIRED` headers |
 | **Avatar** | Uploaded to OKX CDN (440×440, square corners) |
-| **Status** | **Listing under review** (re-submitted multiple times) |
+| **Status** | **Listing under review** (submitted 8th attempt) |
 
 ### Review History
 
@@ -82,7 +86,8 @@
 | 4th | ❌ Rejected | x402 standard validation — the unpaid 402 body was non-conformant (`x402Version` sent as string `"1"`, challenge nested under `payment`, `accepts[]` missing `resource`/`description`/`maxTimeoutSeconds`) |
 | 5th | ❌ Rejected | **Two reasons.** No.1: x402 standard validation — OKX asked us to integrate x402 using the OKX Payment SDK (see §4/§10). No.2: platform testing could not get any response from the agent → task timed out. Root cause of No.2 diagnosed: a stale okx-a2a daemon lock on the persistent volume stopped the XMTP listener from ever starting (see §10) |
 | 6th | 🔄 Ready to submit | Stale-lock fix applied to `railway-a2a-worker.js` (auto-clears the lock on boot so the XMTP daemon starts); live 402 re-confirmed spec-clean against the deployed endpoint |
-| 7th | 🔄 Ready to submit | OKX Payment SDK integrated (`@okxweb3/x402-express` dual-path: SDK exact scheme when keys present, charge fallback otherwise). A2MCP `/a2mcp/invoke` now returns 402 (was timing out on review). Railway running SDK mode (sdkMode:true). |
+| 7th | 🔄 SDK & A2MCP | OKX Payment SDK integrated (`@okxweb3/x402-express` dual-path: SDK exact scheme when keys present, charge fallback otherwise). A2MCP `/a2mcp/invoke` now returns 402 (was timing out on review). Railway running SDK mode (sdkMode:true). |
+| 8th | ✅ **Resubmitted** | All issues resolved. Daemon runs with heartbeats, XMTP delivers tasks, agent responds end-to-end. Submitted for re-review via `agent activate`. |
 
 ---
 
@@ -185,9 +190,9 @@ Built as a single-page app served from `/` on the Render server:
 
 ---
 
-## 8. Current Status & Remaining Items
+## 8. Current Status
 
-### ✅ Verified (7th-attempt-ready)
+### ✅ Verified (8th attempt submitted)
 
 | Check | Result |
 |---|---|
@@ -198,17 +203,17 @@ Built as a single-page app served from `/` on the Render server:
 | Render `/.well-known/agent.json` | ✅ Agent card with pricing, wallet, skills |
 | Render A2A JSON-RPC | ✅ agent/card + tasks/send both respond |
 | Railway `/health` | ✅ **sdkMode:true** (SDK exact scheme active) |
-| Stale-lock fix | ✅ Code in `railway-a2a-worker.js` + pushed to `master` so Railway auto-deploys it |
-
-### ❓ Needs confirmation (not externally testable)
-
-- [ ] **A2A daemon actually started** — check Railway logs for `daemon lock acquired` + `listener` lines. Requires Railway CLI or dashboard access.
-- [ ] **Manual smoke test** — on OKX.AI marketplace, prompt agent #5001 and confirm a response comes back (tests both XMTP delivery AND x402 payment flow end-to-end).
-- [ ] **OKX dashboard shows Online** — agent #5001 should flip to green status if the daemon heartbeats are reaching the platform.
+| Railway daemon | ✅ `daemon lock acquired`, heartbeats every 60s |
+| Railway in-container login | ✅ Railway-native session, `identityReady=true` |
+| XMTP task delivery | ✅ Agent responds via marketplace (exitCode=0, aiSession populated) |
+| CRLF line endings | ✅ Fixed via `.gitattributes` |
+| Session ID format | ✅ Fixed — outputs `session_id:` prefix for daemon parsing |
+| Agent #5001 online | ✅ `onlineStatus: 1`, heartbeats on XLayer (chain 196) |
+| ASP listing status | ✅ **"Listing under review"** — 8th attempt submitted via `agent activate` |
 
 ### 📋 To do
 
-- [ ] **Re-submit ASP listing** — 7th attempt, once daemon is confirmed online
+- [ ] **Wait for OKX review result**
 - [ ] **Delete `railway-identity.env`** — local gitignored file holding base64 identity secrets; Railway already has the vars set, so it can be removed
 
 ---
@@ -370,3 +375,116 @@ previously returned `200` (causing review timeout); now returns instant `402`.
 **Verification:** `POST /a2mcp/invoke` (unpaid) returns HTTP 402 with
 SDK-canonical USDT0 (`0x779Ded0c9e1022225f8E0630b35a9b54bE713736`), correct
 `payTo`, `network: eip155:196`, `maxAmountRequired: 10000`.
+
+### 10.8 Railway in-container login timeout (ONCHAINOS_DO_LOGIN) — RESOLVED
+
+**Symptom:** the Railway A2A worker logs showed `identityReady= false` and
+`Missing OnchainOS identity`. The daemon never started. The bootstrap script wrote
+the session from `ONCHAINOS_SESSION_B64` but then cleared it and attempted a
+browser/email login flow that timed out (no browser in a container).
+
+**Root cause:** three Railway environment variables interacted badly:
+- `ONCHAINOS_DO_LOGIN=1` — triggered browser/email login flow
+- `ONCHAINOS_CLEAR_SESSION=1` — deleted the session written from B64 before logging in
+- `ONCHAINOS_LOGIN_MODE=email` — required interactive browser login which always
+  times out in a headless container
+
+Additionally, the `ONCHAINOS_SESSION_B64` from the laptop was device-bound
+(`"session expired"` on Railway), so even without the login flow, the B64 session
+wouldn't work.
+
+**Fix (two-stage):**
+1. Changed `ONCHAINOS_LOGIN_MODE=ak` to try API-key login (failed — the OKX API keys
+   are for Payment SDK, not agentic wallet).
+2. Reverted to email mode, generated a login URL from the Railway container logs,
+   opened it in a browser, and completed the OAuth login. This created a
+   **Railway-native session** on the persistent volume.
+3. Disabled `ONCHAINOS_DO_LOGIN=0` and `ONCHAINOS_CLEAR_SESSION=0` so subsequent
+   restarts reuse the saved session without re-login.
+
+**Verification:** Railway logs now show `identityReady= true` on every deploy,
+`daemon lock acquired` within seconds.
+
+### 10.9 Claude shim CRLF line endings (claude --print failed) — RESOLVED
+
+**Symptom:** the okx-a2a daemon logged:
+```
+/usr/bin/env: 'bash\r': No such file or directory
+exit code 127
+```
+The claude shim process exited immediately without producing output, so the daemon
+could never deliver a task response.
+
+**Root cause:** `scripts/bin/claude` was created on Windows with CRLF (`\r\n`) line
+endings. When Git cloned the repo on the Railway Linux container, the shebang line
+was read as `#!/usr/bin/env bash\r`, causing the kernel to look for a binary named
+`bash\r` which doesn't exist.
+
+**Fix:** added `.gitattributes` with:
+```
+scripts/bin/* text eol=lf
+scripts/*.js text eol=lf
+*.sh text eol=lf
+```
+This forces Git to check out shell scripts with LF line endings on all platforms.
+Also ran `sed -i 's/\r$//'` on the existing files.
+
+**Verification:** `exitCode=0` in daemon logs after deploy. Agent responds
+successfully via XMTP delivery.
+
+### 10.10 Claude shim session ID format — RESOLVED
+
+**Symptom:** after fixing the CRLF issue, the daemon logged `exitCode=0` and the
+agent produced a response, but the daemon still reported:
+```
+claude did not emit a session id (command=/app/scripts/bin/claude, exit code 0)
+```
+
+**Root cause:** the shim output the session ID as a bare string on its own line:
+```
+<sessionId>\n<response>
+```
+But the okx-a2a daemon (`@okxweb3/a2a-node`) parses the session ID from stdout
+using the regex `/^session_id:\s*(\S+)/` (for text format) or from JSON stream
+events (for `stream-json` format). A bare string didn't match either parser.
+
+**Fix:** changed the shim output to:
+```
+session_id: <sessionId>\n<response>
+```
+The daemon also passes `--output-format stream-json --verbose` flags to the claude
+command by default, but the shim ignores unknown flags and the text-format
+`session_id:` line is parsed before the JSON fallback is attempted.
+
+**Verification:** daemon logs now show `aiSession=<sessionId>` instead of
+`aiSession=(none)`. No more `did not emit` warnings.
+
+### 10.11 /chat response missing sessionId — RESOLVED
+
+**Symptom:** the `/chat` endpoint returned `{ response, recIds }` without a
+`sessionId`, so the claude shim generated a fallback from timestamp + random.
+
+**Fix:** added `sessionId` field to the `/chat` JSON response in `server.js`,
+derived from userId and timestamp. The shim prefers this value over the fallback.
+
+### 10.12 End-to-end smoke test — RESOLVED
+
+**Symptom:** the 5th rejection noted "platform testing could not get any response
+from the agent." The daemon had never successfully processed a task.
+
+**Fix:** after resolving the stale-lock, in-container login, CRLF, and session-ID
+issues, a User agent (#7240 "Tester") was registered and a task was published to
+Shiori #5001 via:
+```
+onchainos agent create-task --provider 5001 --service-id <sid> --payment-mode x402
+```
+The task was delivered via XMTP, the daemon spawned the claude shim, the shim
+called the internal `/chat` endpoint (bypassing x402 via loopback), and the LLM
+generated a response. The daemon captured the session ID and returned the response.
+
+**Verification (from Railway logs):**
+```
+AI session done ... exitCode=0 ... aiSession=shiori-o…vlqvsr
+stdout="session_id: shiori-okx-a2a-user-... Oh, hello there!..."
+```
+The agent responded with a full natural-language recommendation prompt.
