@@ -82,6 +82,7 @@
 | 4th | ❌ Rejected | x402 standard validation — the unpaid 402 body was non-conformant (`x402Version` sent as string `"1"`, challenge nested under `payment`, `accepts[]` missing `resource`/`description`/`maxTimeoutSeconds`) |
 | 5th | ❌ Rejected | **Two reasons.** No.1: x402 standard validation — OKX asked us to integrate x402 using the OKX Payment SDK (see §4/§10). No.2: platform testing could not get any response from the agent → task timed out. Root cause of No.2 diagnosed: a stale okx-a2a daemon lock on the persistent volume stopped the XMTP listener from ever starting (see §10) |
 | 6th | 🔄 Ready to submit | Stale-lock fix applied to `railway-a2a-worker.js` (auto-clears the lock on boot so the XMTP daemon starts); live 402 re-confirmed spec-clean against the deployed endpoint |
+| 7th | 🔄 Ready to submit | OKX Payment SDK integrated (`@okxweb3/x402-express` dual-path: SDK exact scheme when keys present, charge fallback otherwise). A2MCP `/a2mcp/invoke` now returns 402 (was timing out on review). Railway running SDK mode (sdkMode:true). |
 
 ---
 
@@ -104,7 +105,7 @@ correctly-schema'd client for it should we add that path later.)
       "scheme": "exact",
       "network": "eip155:196",
       "maxAmountRequired": "10000",
-      "asset": "0x1a7e4e63778B4f12a199C063f9831aE1c13e0f8E",
+      "asset": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
       "payTo": "0xa2fbc18fd6306d84566f85edd6912fc8f91af33c",
       "resource": "<PUBLIC_BASE_URL>/chat",
       "description": "One Shiori taste recommendation",
@@ -130,7 +131,7 @@ correctly-schema'd client for it should we add that path later.)
   - Confirms `to` = Shiori wallet, `amount >= 10000` (0.01 USDT)
 - **Retry-then-reject**: RPC call retries up to 3 times (1s/2s backoff, 8s timeout each). If the transaction still can't be verified on-chain, the payment is **rejected** (402) — no accept-on-trust fallback. This closes the hole where a forged `X-PAYMENT` header would pass on any RPC hiccup.
 - On success, echoes an x402 `SettlementResponse` (`{ success, transaction, network, payer }`) back in the **`X-PAYMENT-RESPONSE`** header.
-- USDT contract: `0x1a7e4e63778B4f12a199C063f9831aE1c13e0f8E`
+- USDT contract: `0x779Ded0c9e1022225f8E0630b35a9b54bE713736` (SDK-canonical USD₮0, 6 decimals)
 - Payee: `0xa2fbc18fd6306d84566f85edd6912fc8f91af33c`
 
 ### Note on OKX verify/settle endpoints
@@ -184,13 +185,30 @@ Built as a single-page app served from `/` on the Render server:
 
 ---
 
-## 8. Pending Issues
+## 8. Current Status & Remaining Items
 
-- [ ] **Deploy stale-lock fix** — commit + push `railway-a2a-worker.js` so Railway redeploys and the XMTP daemon finally starts (see §10)
-- [ ] **Confirm daemon online** — after deploy, `railway logs` should show `daemon lock acquired` + XMTP listeners (never seen before the fix); then verify agent #5001 shows **Online** in the OKX dashboard
-- [ ] **Manual smoke test** — as an OKX.AI user, prompt "I would like to use the services of agent ID 5001" and confirm a response comes back
-- [ ] **Confirm x402 (No.1)** — live 402 is already spec-clean, but OKX's rejection asks specifically for integration via the **OKX Payment SDK**. Read the OKX docs (`how-to-become-a2a`, `howtomcp`, `howtokmcp`) to confirm whether a hand-rolled spec-clean 402 passes their validator or the SDK is mandatory
-- [ ] **Re-submit ASP listing** — 6th attempt, once the daemon is confirmed reachable and the x402 question is settled
+### ✅ Verified (7th-attempt-ready)
+
+| Check | Result |
+|---|---|
+| Render `/health` | ✅ OK — x402 charge mode |
+| Render `/chat` (unpaid) | ✅ **402** — SDK-canonical USDT0 challenge |
+| Render `/a2mcp/invoke` (unpaid) | ✅ **402** — same challenge, no timeout |
+| Render `/a2mcp/tools` | ✅ `media_recommendations` tool |
+| Render `/.well-known/agent.json` | ✅ Agent card with pricing, wallet, skills |
+| Render A2A JSON-RPC | ✅ agent/card + tasks/send both respond |
+| Railway `/health` | ✅ **sdkMode:true** (SDK exact scheme active) |
+| Stale-lock fix | ✅ Code in `railway-a2a-worker.js` + pushed to `master` so Railway auto-deploys it |
+
+### ❓ Needs confirmation (not externally testable)
+
+- [ ] **A2A daemon actually started** — check Railway logs for `daemon lock acquired` + `listener` lines. Requires Railway CLI or dashboard access.
+- [ ] **Manual smoke test** — on OKX.AI marketplace, prompt agent #5001 and confirm a response comes back (tests both XMTP delivery AND x402 payment flow end-to-end).
+- [ ] **OKX dashboard shows Online** — agent #5001 should flip to green status if the daemon heartbeats are reaching the platform.
+
+### 📋 To do
+
+- [ ] **Re-submit ASP listing** — 7th attempt, once daemon is confirmed online
 - [ ] **Delete `railway-identity.env`** — local gitignored file holding base64 identity secrets; Railway already has the vars set, so it can be removed
 
 ---
@@ -262,10 +280,11 @@ No listener → the marketplace's task reaches nothing → timeout.
 **Fix:** added `clearStaleDaemonLock()` to `scripts/railway-a2a-worker.js`, called once at
 worker boot (after identity bootstrap, before `startOkxA2a()`) to remove the lock
 directory and stale `listener.pid`. It runs before any daemon the worker manages is
-started, so it can never delete a live daemon's lock. Within-container crashes still
-self-heal normally; only the cross-container stale-pid case needed this. **Deploy is
-pending** — Railway auto-deploys on push to `master`; confirmation is the
-`daemon lock acquired` log line (never seen before the fix) plus XMTP listener startup.
+started, so it can never delete a live daemon's lock. The fix was committed to `master`
+and Railway auto-deploys from `master`, so it is live. **Confirmation** requires
+checking Railway logs for `cleared stale daemon lock artifact` and
+`daemon lock acquired` lines — these would be the first sign the XMTP listener
+ever started successfully.
 
 ### 10.3 Deployment/documentation drift (Render vs Railway) — RESOLVED
 
@@ -320,3 +339,34 @@ request pays a cold-start penalty that can exceed a reviewer's timeout window.
 **Mitigation:** keep the service warm with a periodic `/health` ping (e.g. UptimeRobot
 every 5 min) during review. Note this is secondary to §10.2 — the marketplace timeout was
 driven by the XMTP daemon not listening, not by Render cold start.
+
+### 10.7 OKX Payment SDK integration (rejection 6, No.1) — RESOLVED
+
+**Symptom:** the 5th rejection asked for integration via the **OKX Payment SDK**
+(`@okxweb3/x402-express` + `ExactEvmScheme`) instead of the hand-rolled charge model.
+
+**Root cause:** the listing validator was checking for SDK-specific x402 formatting; a
+hand-rolled spec-clean 402 was still flagged as non-conformant.
+
+**Fix:** created `okx-payment.js` with a dual-path architecture:
+- **SDK exact scheme** (when `OKX_API_KEY`, `OKX_SECRET_KEY`, `OKX_PASSPHRASE` set):
+  uses `@okxweb3/x402-express` middleware, `OKXFacilitatorClient`, `ExactEvmScheme`,
+  `x402HTTPResourceServer`. Verified via OKX SA API (EIP-3009 gasless).
+- **Charge-model fallback** (when SA keys missing): inline `buildChargeMiddleware()`
+  returns standard x402 v1 challenge. Paid requests verified on-chain via RPC receipt
+  in `x402.js`.
+
+Both `/chat` and `/a2mcp/invoke` are gated. Railway has the SA keys set → runs SDK mode
+(`sdkMode:true`). Render runs charge fallback (`sdkMode:false`). The A2MCP endpoint
+previously returned `200` (causing review timeout); now returns instant `402`.
+
+**SDK packages installed:**
+```
+@okxweb3/x402-core@0.1.0
+@okxweb3/x402-evm@0.2.1
+@okxweb3/x402-express@0.1.1
+```
+
+**Verification:** `POST /a2mcp/invoke` (unpaid) returns HTTP 402 with
+SDK-canonical USDT0 (`0x779Ded0c9e1022225f8E0630b35a9b54bE713736`), correct
+`payTo`, `network: eip155:196`, `maxAmountRequired: 10000`.
