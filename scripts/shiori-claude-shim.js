@@ -94,7 +94,14 @@ async function main() {
 
   const data = await res.json();
   const text = data.response || data.text || '';
-  // Claude --print writes assistant text to stdout; okx-a2a captures it.
+
+  // okx-a2a expects the Claude protocol:
+  //   --print                    → emit <sessionId>\n<response>  (first message)
+  //   --resume <sid> --print     → emit <response>              (follow-up)
+  if (!resume) {
+    const sessionId = data.sessionId || `shiori-${Date.now().toString(36)}-${String(Math.random()).slice(2, 8)}`;
+    process.stdout.write(`${sessionId}\n`);
+  }
   process.stdout.write(text.endsWith('\n') ? text : `${text}\n`);
 }
 

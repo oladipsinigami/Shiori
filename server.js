@@ -195,7 +195,8 @@ async function chatHandler(req, res) {
   }
   try {
     const { text, recIds } = await runObito(userId, message);
-    return res.json({ response: text, recIds });
+    const sessionId = `shiori-${userId.slice(0, 16)}-${Date.now().toString(36)}`;
+    return res.json({ response: text, recIds, sessionId });
   } catch (err) {
     console.error('/chat LLM error:', err.message, err.stack);
     return res.status(500).json({ error: err.message || 'LLM call failed' });
