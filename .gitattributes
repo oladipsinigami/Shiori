@@ -1,0 +1,4 @@
+* text=auto
+scripts/bin/* text eol=lf
+scripts/*.js text eol=lf
+*.sh text eol=lf
