@@ -95,12 +95,12 @@ async function main() {
   const data = await res.json();
   const text = data.response || data.text || '';
 
-  // okx-a2a expects the Claude protocol:
-  //   --print                    → emit <sessionId>\n<response>  (first message)
-  //   --resume <sid> --print     → emit <response>              (follow-up)
+  // okx-a2a daemon parses sessionId from stdout line matching /^session_id:\s*(\S+)/
+  // or from stream-json events: {"type":"system","subtype":"init","session_id":"<id>"}
+  // We use the text format for simplicity.
   if (!resume) {
-    const sessionId = data.sessionId || `shiori-${Date.now().toString(36)}-${String(Math.random()).slice(2, 8)}`;
-    process.stdout.write(`${sessionId}\n`);
+    const sessionId = data.sessionId || `s${Date.now().toString(36)}${String(Math.random()).slice(2, 10)}`;
+    process.stdout.write(`session_id: ${sessionId}\n`);
   }
   process.stdout.write(text.endsWith('\n') ? text : `${text}\n`);
 }
