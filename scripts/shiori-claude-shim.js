@@ -12,11 +12,11 @@
  *   okx-a2a daemon start --provider claude --no-autostart
  *
  * Env:
- *   SHIORI_URL   default https://shiori-h45s.onrender.com
+ *   SHIORI_URL   default http://127.0.0.1:8080 (in-container brain)
  *   SHIORI_USER_ID  optional fixed user id (default derives from resume/session)
  */
 
-const SHIORI_URL = (process.env.SHIORI_URL || 'https://shiori-h45s.onrender.com').replace(/\/$/, '');
+const SHIORI_URL = (process.env.SHIORI_URL || 'http://127.0.0.1:8080').replace(/\/$/, '');
 
 function parseArgs(argv) {
   const args = argv.slice(2);

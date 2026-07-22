@@ -16,8 +16,11 @@ const MAX_TASKS = 500;
 
 const PUBLIC_BASE_URL =
   process.env.PUBLIC_BASE_URL ||
+  (process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : null) ||
   process.env.RENDER_EXTERNAL_URL ||
-  'https://shiori-h45s.onrender.com';
+  'https://shiori-a2a-worker-production.up.railway.app';
 
 function agentCard() {
   return {

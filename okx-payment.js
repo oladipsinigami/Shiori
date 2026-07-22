@@ -138,7 +138,10 @@ function buildChargeChallenge(req) {
     methodDetails: { chainId: 196, feePayer: true },
   };
 
-  const realm = (process.env.PUBLIC_BASE_URL || 'shiori-h45s.onrender.com')
+  const realm = (
+    process.env.PUBLIC_BASE_URL ||
+    'https://shiori-a2a-worker-production.up.railway.app'
+  )
     .replace(/^https?:\/\//, '')
     .replace(/\/$/, '');
 

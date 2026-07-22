@@ -56,7 +56,9 @@ async function main() {
 
   // PUBLIC_BASE_URL should be the Railway public domain for this service
   // (agent card + x402 realm). Override via env when deploying.
-  const publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://shiori-h45s.onrender.com';
+  const publicBaseUrl =
+    process.env.PUBLIC_BASE_URL ||
+    'https://shiori-a2a-worker-production.up.railway.app';
 
   const vars = {
     OKX_A2A_ENABLE: '1',

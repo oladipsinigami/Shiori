@@ -126,7 +126,7 @@ async function runObito(userId, userMessage) {
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-      'HTTP-Referer': process.env.PUBLIC_BASE_URL || 'https://shiori-h45s.onrender.com',
+      'HTTP-Referer': process.env.PUBLIC_BASE_URL || 'https://shiori-a2a-worker-production.up.railway.app',
       'X-Title': 'Shiori - AI Librarian'
     },
     body: JSON.stringify({

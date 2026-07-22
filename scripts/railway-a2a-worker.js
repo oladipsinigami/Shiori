@@ -15,7 +15,7 @@ const fs = require('fs');
 const { spawn, spawnSync } = require('child_process');
 
 const PORT = Number(process.env.PORT || 8080);
-const SHIORI_URL = (process.env.SHIORI_URL || 'https://shiori-h45s.onrender.com').replace(
+const SHIORI_URL = (process.env.SHIORI_URL || 'http://127.0.0.1:8080').replace(
   /\/$/,
   ''
 );

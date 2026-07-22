@@ -11,8 +11,11 @@ const https = require('https');
 const XLAYER_RPC = process.env.XLAYER_RPC || 'https://xlayerrpc.okx.com';
 const PUBLIC_BASE_URL =
   process.env.PUBLIC_BASE_URL ||
+  (process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : null) ||
   process.env.RENDER_EXTERNAL_URL ||
-  'https://shiori-h45s.onrender.com';
+  'https://shiori-a2a-worker-production.up.railway.app';
 const PAYMENT_REALM = PUBLIC_BASE_URL.replace(/^https?:\/\//, '').replace(/\/$/, '');
 
 // USDT0 — OKX Payment SDK's canonical settlement stablecoin on X Layer.
