@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "ShelfmateUserProfile",
-  "description": "Structured taste + context profile that the Obito recommendation agent reasons over. Owned and persisted by the wrapper app, not by the agent itself.",
+  "description": "Structured taste + context profile that the Shiori (AI Librarian) recommendation agent reasons over. Owned and persisted by the wrapper app, not by the agent itself.",
   "type": "object",
   "required": ["user_id", "profile_status", "schedule", "taste", "feedback_log"],
   "properties": {
