@@ -58,6 +58,7 @@ function loadOrCreateProfile(userId) {
 function logRecommendations(userId, text) {
   const recRegex = /<!--\s*rec_id:\s*(rec-\S+?)\s*-->/g;
   const recIds = [];
+  const newEntries = [];
   let match;
   while ((match = recRegex.exec(text)) !== null) {
     const recId = match[1];
@@ -67,16 +68,21 @@ function logRecommendations(userId, text) {
     const lineText = text.slice(lineStart, lineEnd === -1 ? text.length : lineEnd);
     const rawText = lineText.replace(/<!--[\s\S]*?-->/g, '').trim();
 
-    const logPath = path.join(logsDir, `${userId}-recs.json`);
-    const logs = fs.existsSync(logPath) ? JSON.parse(fs.readFileSync(logPath, 'utf-8')) : [];
-    logs.push({
+    newEntries.push({
       rec_id: recId,
       raw_text_of_that_recommendation: rawText,
       timestamp: new Date().toISOString()
     });
-    fs.writeFileSync(logPath, JSON.stringify(logs, null, 2));
     recIds.push(recId);
   }
+
+  if (newEntries.length > 0) {
+    const logPath = path.join(logsDir, `${userId}-recs.json`);
+    const logs = fs.existsSync(logPath) ? JSON.parse(fs.readFileSync(logPath, 'utf-8')) : [];
+    logs.push(...newEntries);
+    fs.writeFileSync(logPath, JSON.stringify(logs, null, 2));
+  }
+
   return recIds;
 }
 
@@ -136,7 +142,7 @@ async function runObito(userId, userMessage) {
         { role: 'user', content: fullMessage }
       ],
       temperature: 0.7,
-      max_tokens: 800
+      max_tokens: 1400
     })
   });
 
