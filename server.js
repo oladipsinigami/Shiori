@@ -15,6 +15,7 @@ const {
 const {
   createChatPaymentGate,
   createA2mcpPaymentGate,
+  buildChargeChallenge,
   isTrustedInternal,
   PAY_TO,
   PRICE,
@@ -113,7 +114,7 @@ app.get(['/a2mcp/tools', '/mcp/tools'], (_req, res) => {
 
 // --- Paid brain: POST /chat (OKX x402 Payment SDK) ---
 
-// When this host has no OKX Payment keys (e.g. free Render), forward /chat to the
+// When this host has no OKX Payment keys (e.g. free Render), forward paid routes to the
 // Railway brain that does. Preserve Host / X-Forwarded-* so the 402 `resource`
 // still matches the public listing URL (shiori-h45s.onrender.com).
 const X402_PEER_URL = (
@@ -121,8 +122,9 @@ const X402_PEER_URL = (
   'https://shiori-a2a-worker-production.up.railway.app'
 ).replace(/\/$/, '');
 
-async function proxyChatToPeer(req, res) {
-  const target = `${X402_PEER_URL}/chat`;
+async function proxyPaidRequestToPeer(req, res) {
+  const path = req.originalUrl || req.path;
+  const target = `${X402_PEER_URL}${path}`;
   const publicHost =
     (req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
   const publicProto =
@@ -155,17 +157,17 @@ async function proxyChatToPeer(req, res) {
       ? JSON.stringify(req.body)
       : undefined;
 
-  console.log(`[x402-proxy] ${req.method} /chat → ${target} (host=${publicHost || '?'})`);
+  console.log(`[x402-proxy] ${req.method} ${path} → ${target} (host=${publicHost || '?'})`);
 
   try {
     const upstream = await fetch(target, {
-      method: 'POST',
+      method: req.method,
       headers,
       body,
     });
     const text = await upstream.text();
-    // Relay status + payment-related headers
     res.status(upstream.status);
+
     for (const h of [
       'content-type',
       'payment-required',
@@ -174,17 +176,27 @@ async function proxyChatToPeer(req, res) {
       'www-authenticate',
       'access-control-expose-headers',
     ]) {
-      const v = upstream.headers.get(h);
-      if (v) res.setHeader(h, v);
+      let v = upstream.headers.get(h);
+      if (v && (h === 'payment-required' || h === 'PAYMENT-REQUIRED')) {
+        try {
+          const decoded = JSON.parse(Buffer.from(v, 'base64').toString('utf8'));
+          if (decoded && decoded.resource && publicHost) {
+            decoded.resource.url = `${publicProto}://${publicHost}${path}`;
+            v = Buffer.from(JSON.stringify(decoded)).toString('base64');
+          }
+        } catch (_) {}
+      }
+      if (v) {
+        res.setHeader(h, v);
+        if (h === 'payment-required') res.setHeader('PAYMENT-REQUIRED', v);
+      }
     }
     res.setHeader('Access-Control-Allow-Origin', '*');
     return res.send(text);
   } catch (err) {
     console.error('[x402-proxy] failed:', err.message);
-    return res.status(502).json({
-      error: `x402 peer proxy failed: ${err.message}`,
-      peer: X402_PEER_URL,
-    });
+    const challenge = buildChargeChallenge(req);
+    return res.status(402).set(challenge.headers).json(challenge.body);
   }
 }
 
@@ -209,9 +221,8 @@ app.post('/chat', async (req, res, next) => {
   if (isTrustedInternal(req)) {
     return next();
   }
-  if (!paymentGate.configured || !paymentGate.middleware) {
-    // Render (or any host without OKX SA keys) → Railway peer that has them.
-    return proxyChatToPeer(req, res);
+  if (!paymentGate.sdkMode) {
+    return proxyPaidRequestToPeer(req, res);
   }
   return paymentGate.middleware(req, res, next);
 }, chatHandler);
@@ -243,14 +254,9 @@ async function a2mcpMiddleware(req, res, next) {
   if (isTrustedInternal(req)) {
     return next();
   }
-  if (!a2mcpPaymentGate.configured || !a2mcpPaymentGate.middleware) {
-    return res.status(503).json({
-      error:
-        'x402 Payment SDK not configured. Set OKX_API_KEY, OKX_SECRET_KEY, OKX_PASSPHRASE on the host.',
-    });
+  if (!a2mcpPaymentGate.sdkMode) {
+    return proxyPaidRequestToPeer(req, res);
   }
-  // The SDK middleware / charge fallback will either call next() on
-  // verified payment or send a 402 response directly.
   return a2mcpPaymentGate.middleware(req, res, next);
 }
 

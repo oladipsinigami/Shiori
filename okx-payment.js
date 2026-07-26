@@ -104,25 +104,31 @@ function buildChargeMiddleware() {
 }
 
 /**
- * Build a standard x402 v1 challenge for the charge model.
+ * Build a standard x402 v2 challenge for the charge model / fallback.
+ * Formatted to match the official OKX Payment SDK (@okxweb3/x402-express) v2 challenge.
  */
-function buildChargeChallenge(req) {
-  const resourceUrl =
-    `${req.protocol}://${req.get('host')}${req.originalUrl || req.path}`;
+function buildChargeChallenge(req, description = 'One Shiori taste recommendation') {
+  const protocol = req.get?.('x-forwarded-proto') || req.protocol || 'https';
+  const host = (req.get?.('x-forwarded-host') || req.get?.('host') || '').split(',')[0].trim();
+  const resourceUrl = host
+    ? `${protocol}://${host}${req.originalUrl || req.path}`
+    : (process.env.PUBLIC_BASE_URL || 'https://shiori-a2a-worker-production.up.railway.app') + (req.originalUrl || req.path);
 
   const body = {
-    x402Version: 1,
-    error: 'Payment required to access this resource',
+    x402Version: 2,
+    error: 'Payment required',
+    resource: {
+      url: resourceUrl,
+      description,
+      mimeType: 'application/json',
+    },
     accepts: [
       {
         scheme: 'exact',
         network: NETWORK,
-        maxAmountRequired: '10000',
+        amount: '10000',
         asset: USDT0,
         payTo: PAY_TO,
-        resource: resourceUrl,
-        description: 'One Shiori taste recommendation',
-        mimeType: 'application/json',
         maxTimeoutSeconds: 300,
         extra: { name: 'USD\u20AE0', version: '1' },
       },
@@ -138,7 +144,7 @@ function buildChargeChallenge(req) {
     methodDetails: { chainId: 196, feePayer: true },
   };
 
-  const realm = (
+  const realm = host || (
     process.env.PUBLIC_BASE_URL ||
     'https://shiori-a2a-worker-production.up.railway.app'
   )
@@ -148,17 +154,18 @@ function buildChargeChallenge(req) {
   const wwwAuthValue =
     'Payment id="shiori", realm="' +
     realm +
-    '", method="evm", intent="charge", request="' +
+    '", method="evm", intent="exact", request="' +
     Buffer.from(JSON.stringify(requestPayload)).toString('base64url') +
     '"';
 
   return {
-    body,
+    body: {},
     headers: {
       'PAYMENT-REQUIRED': headerValue,
+      'payment-required': headerValue,
       'WWW-Authenticate': wwwAuthValue,
       'Access-Control-Expose-Headers':
-        'PAYMENT-REQUIRED, WWW-Authenticate, X-PAYMENT-RESPONSE',
+        'PAYMENT-REQUIRED, payment-required, WWW-Authenticate, X-PAYMENT-RESPONSE, PAYMENT-RESPONSE',
     },
   };
 }
@@ -245,13 +252,6 @@ function buildPaymentGate(routes) {
  * Create the payment gate for POST /chat.
  */
 function createChatPaymentGate() {
-  const publicBase = (
-    process.env.PUBLIC_BASE_URL ||
-    process.env.RENDER_EXTERNAL_URL ||
-    ''
-  ).replace(/\/$/, '');
-  const resourceUrl = publicBase ? `${publicBase}/chat` : undefined;
-
   return buildPaymentGate({
     'POST /chat': {
       accepts: {
@@ -263,7 +263,6 @@ function createChatPaymentGate() {
       },
       description: 'One Shiori taste recommendation',
       mimeType: 'application/json',
-      ...(resourceUrl ? { resource: resourceUrl } : {}),
     },
   });
 }
@@ -273,13 +272,6 @@ function createChatPaymentGate() {
  * Used by the OKX.AI platform review to verify x402 compliance.
  */
 function createA2mcpPaymentGate() {
-  const publicBase = (
-    process.env.PUBLIC_BASE_URL ||
-    process.env.RENDER_EXTERNAL_URL ||
-    ''
-  ).replace(/\/$/, '');
-  const resourceUrl = publicBase ? `${publicBase}/a2mcp/invoke` : undefined;
-
   return buildPaymentGate({
     'POST /a2mcp/invoke': {
       accepts: {
@@ -291,7 +283,6 @@ function createA2mcpPaymentGate() {
       },
       description: 'One Shiori taste recommendation via A2MCP',
       mimeType: 'application/json',
-      ...(resourceUrl ? { resource: resourceUrl } : {}),
     },
     'POST /mcp/invoke': {
       accepts: {
@@ -303,7 +294,6 @@ function createA2mcpPaymentGate() {
       },
       description: 'One Shiori taste recommendation via MCP',
       mimeType: 'application/json',
-      ...(resourceUrl ? { resource: resourceUrl.replace(/\/a2mcp\//, '/mcp/') } : {}),
     },
   });
 }
