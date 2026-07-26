@@ -155,7 +155,7 @@ async function runObito(userId, userMessage) {
   const rawOutput = (data.choices?.[0]?.message?.content || '').trim();
 
   const recIds = logRecommendations(userId, rawOutput);
-  const cleanText = stripMarkdown(stripRecComments(rawOutput));
+  const cleanText = stripRecComments(rawOutput);
 
   return { text: cleanText, recIds };
 }

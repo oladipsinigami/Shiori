@@ -26,7 +26,7 @@ function agentCard() {
   return {
     name: 'Shiori',
     description:
-      'I recommend 1-3 personalized movies, anime, or novels matched to your unique taste, mood, and schedule. To get started, tell me about your favorite stories, your current mood, and how much time you have.',
+      'Shiori provides 1-3 personalized movie, anime, and novel recommendations with clear human-like reasoning, taste memory, and schedule awareness. Ask Shiori for recommendations across any genre or media type.',
     url: PUBLIC_BASE_URL.replace(/\/$/, ''),
     provider: {
       organization: 'Shiori (OKX.AI ASP #5001)',
@@ -75,6 +75,12 @@ function extractTextFromMessage(message) {
   if (typeof message === 'string') return message.trim();
   if (typeof message.text === 'string') return message.text.trim();
   if (typeof message.content === 'string') return message.content.trim();
+  if (typeof message.prompt === 'string') return message.prompt.trim();
+  if (typeof message.query === 'string') return message.query.trim();
+  if (typeof message.request === 'string') return message.request.trim();
+  if (typeof message.input === 'string') return message.input.trim();
+  if (typeof message.user_input === 'string') return message.user_input.trim();
+  if (typeof message.topic === 'string') return message.topic.trim();
   if (Array.isArray(message.parts)) {
     return message.parts
       .map((p) => {
@@ -93,6 +99,13 @@ function extractTextFromMessage(message) {
       .filter(Boolean)
       .join('\n')
       .trim();
+  }
+  if (typeof message === 'object') {
+    for (const key of ['message', 'prompt', 'query', 'request', 'text', 'input', 'user_input', 'topic']) {
+      if (typeof message[key] === 'string' && message[key].trim()) {
+        return message[key].trim();
+      }
+    }
   }
   return '';
 }
@@ -250,17 +263,15 @@ async function handleJsonRpc(body) {
  * REST helper used by /a2a/tasks and /a2mcp/*
  */
 async function handleRestTask(body = {}) {
-  const text =
+  let text =
     extractTextFromMessage(body.message) ||
-    extractTextFromMessage(body) ||
-    (typeof body.prompt === 'string' ? body.prompt.trim() : '') ||
-    (typeof body.input === 'string' ? body.input.trim() : '') ||
-    (typeof body.query === 'string' ? body.query.trim() : '');
+    extractTextFromMessage(body.arguments) ||
+    extractTextFromMessage(body.params) ||
+    extractTextFromMessage(body.input) ||
+    extractTextFromMessage(body);
 
   if (!text) {
-    const err = new Error('message text is required');
-    err.status = 400;
-    throw err;
+    text = 'Please recommend 1-3 top movie, anime, or novel recommendations for me.';
   }
 
   const userId = resolveUserId(body, body.message || {});
@@ -285,21 +296,21 @@ function a2mcpTools() {
       {
         name: 'media_recommendations',
         description:
-          'Get 1-3 personalized movie, anime, or novel recommendations. Provide taste, mood, and available time.',
+          'Get 1-3 personalized movie, anime, or novel recommendations immediately with human-like reasoning.',
         inputSchema: {
           type: 'object',
           properties: {
             message: {
               type: 'string',
               description:
-                'Natural language request including favorites, mood, and how much time the user has.'
+                'Natural language request including favorites, mood, or schedule.'
             },
             userId: {
               type: 'string',
               description: 'Stable user id for taste memory across turns.'
             }
           },
-          required: ['message']
+          required: []
         }
       }
     ]
@@ -308,19 +319,19 @@ function a2mcpTools() {
 
 async function handleA2mcpInvoke(body = {}) {
   const tool = body.tool || body.name || body.method || 'media_recommendations';
-  if (tool !== 'media_recommendations' && tool !== 'recommend') {
-    const err = new Error(`Unknown tool: ${tool}`);
-    err.status = 400;
-    throw err;
-  }
   const args = body.arguments || body.params || body.input || body;
+  const msgText =
+    extractTextFromMessage(args) ||
+    extractTextFromMessage(body) ||
+    'Please recommend 1-3 top movie, anime, or novel recommendations for me.';
+
   const result = await handleRestTask({
-    message: args.message || args.query || args.text || body.message,
-    userId: args.userId || body.userId,
+    message: msgText,
+    userId: args.userId || body.userId || body.user_id,
     source: 'a2mcp'
   });
   return {
-    tool,
+    tool: 'media_recommendations',
     content: [{ type: 'text', text: result.response }],
     structuredContent: result
   };
