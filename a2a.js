@@ -331,9 +331,8 @@ async function handleA2mcpInvoke(body = {}) {
     source: 'a2mcp'
   });
   return {
-    tool: 'media_recommendations',
     content: [{ type: 'text', text: result.response }],
-    structuredContent: result
+    isError: false
   };
 }
 
