@@ -488,3 +488,17 @@ AI session done ... exitCode=0 ... aiSession=shiori-o…vlqvsr
 stdout="session_id: shiori-okx-a2a-user-... Oh, hello there!..."
 ```
 The agent responded with a full natural-language recommendation prompt.
+
+### 10.13 Capabilities Mismatch Rejection & Fix — RESOLVED (2026-07-26)
+
+**Symptom:** OKX listing review rejected with: *"During platform testing, we found that the results returned by your service in actual calls don't match the capabilities stated in your service description."*
+
+**Root Cause:**
+1. Generic/bare initial prompts (e.g., *"hi"*, *"recommendation"*, tool calls) triggered an onboarding-only survey asking for schedule/energy preferences without delivering any movie/anime/novel recommendations.
+2. A2MCP tool calls missing explicit `message` parameters caused `400 message text is required` errors.
+3. `stripMarkdown` stripped titles and bolding formatting from output recommendations.
+
+**Fix (Commit `f6a44cf`):**
+- **`obito.md`**: Updated system prompt to mandate that **Shiori MUST deliver 1–3 concrete recommendations in every response**, including bare greetings and initial turns.
+- **`a2a.js`**: Enhanced `extractTextFromMessage` to parse any key (`message`, `prompt`, `query`, `input`, etc.) and default gracefully to requesting recommendations when payload is empty `{}`.
+- **`obito-core.js`**: Preserved clean Markdown title/format rendering (`**Title** [Format]`).

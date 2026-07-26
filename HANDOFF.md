@@ -1,15 +1,25 @@
 # Shiori — Session Handoff
 
-## Latest rejection (same two reasons)
+## Rejection & Fix Summary (2026-07-26)
 
-OKX rejected agent **Shiori (#5001)** again:
+### Rejection Reason: Capabilities Mismatch
+> *"During platform testing, we found that the results returned by your service in actual calls don't match the capabilities stated in your service description."*
 
-1. **x402 standard validation** — must integrate via **OKX Payment SDK**  
-   Guide: https://web3.okx.com/onchainos/dev-docs/okxai/howtokmcp  
-   Official seller reference (reachable when docs DNS is blocked):  
-   https://raw.githubusercontent.com/okx/payments/master/typescript/SELLER.md
+### Root Cause & Fix (Committed & Pushed in `f6a44cf`):
+1. **Mandatory Immediate Recommendations (`obito.md`)**:
+   Updated system prompt so Shiori **ALWAYS delivers 1–3 concrete recommendations in every response** (including first turn, bare greetings like "hi", and automated tool invocations). Removed onboarding-only responses.
+2. **Robust Input Parsing (`a2a.js`)**:
+   Expanded `extractTextFromMessage` and `handleRestTask`/`handleA2mcpInvoke` to handle any payload structure (`message`, `prompt`, `query`, `input`, etc.) and default gracefully to requesting recommendations when payload is empty `{}`.
+3. **Preserved Markdown Formatting (`obito-core.js`)**:
+   Kept clean title/format markdown rendering (`**Title** [Format]`) while hiding internal `rec_id` comments.
 
-2. **Agent timeout** — platform got no XMTP response (stale okx-a2a daemon lock).
+---
+
+## Deployment Status
+- **Commit**: `f6a44cf` pushed to `master` (`https://github.com/oladipsinigami/Shiori.git`).
+- **Hosts**:
+  - **Railway**: `https://shiori-a2a-worker-production.up.railway.app` (Brain + A2A Worker)
+  - **Render**: `https://shiori-h45s.onrender.com` (Brain)
 
 ## Fixes in this workspace (deploy before resubmit)
 
