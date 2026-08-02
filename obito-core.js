@@ -124,7 +124,7 @@ async function runObito(userId, userMessage) {
   }
   const fullMessage = `${context} ${userMessage}`;
 
-  const model = process.env.OPENROUTER_MODEL || 'openrouter/auto';
+  const model = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free';
   const url = 'https://openrouter.ai/api/v1/chat/completions';
 
   try {
@@ -136,7 +136,7 @@ async function runObito(userId, userMessage) {
         'HTTP-Referer': process.env.PUBLIC_BASE_URL || 'https://shiori-a2a-worker-production.up.railway.app',
         'X-Title': 'Shiori - AI Librarian'
       },
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(5000),
       body: JSON.stringify({
         model,
         messages: [

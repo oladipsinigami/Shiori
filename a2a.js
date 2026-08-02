@@ -81,11 +81,15 @@ function extractTextFromMessage(message) {
   if (typeof message.input === 'string') return message.input.trim();
   if (typeof message.user_input === 'string') return message.user_input.trim();
   if (typeof message.topic === 'string') return message.topic.trim();
+  if (Array.isArray(message.messages)) {
+    return extractTextFromMessage(message.messages);
+  }
   if (Array.isArray(message.parts)) {
     return message.parts
       .map((p) => {
         if (typeof p === 'string') return p;
         if (p && typeof p.text === 'string') return p.text;
+        if (p && typeof p.content === 'string') return p.content;
         if (p && p.type === 'text' && typeof p.text === 'string') return p.text;
         return '';
       })
@@ -95,15 +99,24 @@ function extractTextFromMessage(message) {
   }
   if (Array.isArray(message)) {
     return message
-      .map((p) => (typeof p === 'string' ? p : p?.text || ''))
+      .map((p) => {
+        if (typeof p === 'string') return p;
+        if (p && typeof p.text === 'string') return p.text;
+        if (p && typeof p.content === 'string') return p.content;
+        return '';
+      })
       .filter(Boolean)
       .join('\n')
       .trim();
   }
   if (typeof message === 'object') {
-    for (const key of ['message', 'prompt', 'query', 'request', 'text', 'input', 'user_input', 'topic']) {
+    for (const key of ['message', 'prompt', 'query', 'request', 'text', 'input', 'user_input', 'topic', 'arguments', 'params']) {
       if (typeof message[key] === 'string' && message[key].trim()) {
         return message[key].trim();
+      }
+      if (message[key] && typeof message[key] === 'object') {
+        const nested = extractTextFromMessage(message[key]);
+        if (nested) return nested;
       }
     }
   }
@@ -341,6 +354,7 @@ module.exports = {
   handleJsonRpc,
   handleRestTask,
   handleA2mcpInvoke,
+  extractTextFromMessage,
   a2mcpTools,
   getTask: (id) => tasks.get(id),
   PUBLIC_BASE_URL

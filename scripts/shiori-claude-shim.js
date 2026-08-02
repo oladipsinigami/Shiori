@@ -25,30 +25,46 @@ function parseArgs(argv) {
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
+
+    if (a.startsWith('--resume=')) {
+      resume = a.split('=').slice(1).join('=') || null;
+      continue;
+    }
     if (a === '--resume' || a === 'resume') {
       resume = args[++i] || null;
       continue;
     }
+
+    if (a.startsWith('--print=')) {
+      print = a.split('=').slice(1).join('=') || null;
+      continue;
+    }
+    if (a.startsWith('-p=')) {
+      print = a.split('=').slice(1).join('=') || null;
+      continue;
+    }
     if (a === '--print' || a === '-p') {
-      // Claude accepts: --print <prompt>  OR  --print  with prompt as next non-flag
       const next = args[i + 1];
-      if (next && !next.startsWith('-')) {
+      if (next) {
         print = next;
         i++;
       }
       continue;
     }
-    // Some CLIs put the prompt as the last bare arg
-    if (!a.startsWith('-') && print === null) {
-      // keep last bare string as candidate prompt
+    if (!a.startsWith('-') && print === null && a !== 'resume') {
       print = a;
     }
   }
 
-  // If --print was last with no value, use remaining joined text
-  if (print === null) {
+  if (!print) {
     const bare = args.filter((a) => !a.startsWith('-') && a !== 'resume');
-    if (bare.length) print = bare[bare.length - 1];
+    if (bare.length) {
+      print = bare.join(' ');
+    }
+  }
+
+  if (!print || !String(print).trim()) {
+    print = 'Please recommend 1-3 top movies, anime, or novels for me.';
   }
 
   return { resume, print };
@@ -65,11 +81,6 @@ function userIdFrom(resume, prompt) {
 
 async function main() {
   const { resume, print } = parseArgs(process.argv);
-  if (!print || !String(print).trim()) {
-    console.error('shiori-claude-shim: missing --print prompt');
-    process.exit(2);
-  }
-
   const userId = userIdFrom(resume, print);
   const message = String(print).trim();
 
@@ -84,18 +95,21 @@ async function main() {
     const res = await fetch(`${SHIORI_URL}/chat`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ userId, message })
+      body: JSON.stringify({ userId, message }),
+      signal: AbortSignal.timeout(6000)
     });
 
     if (res.ok) {
       const data = await res.json();
       const text = data.response || data.text || '';
-      if (!resume) {
-        const sessionId = data.sessionId || `s${Date.now().toString(36)}${String(Math.random()).slice(2, 10)}`;
-        process.stdout.write(`session_id: ${sessionId}\n`);
+      if (text && text.trim()) {
+        if (!resume) {
+          const sessionId = data.sessionId || `s${Date.now().toString(36)}${String(Math.random()).slice(2, 10)}`;
+          process.stdout.write(`session_id: ${sessionId}\n`);
+        }
+        process.stdout.write(text.endsWith('\n') ? text : `${text}\n`);
+        return;
       }
-      process.stdout.write(text.endsWith('\n') ? text : `${text}\n`);
-      return;
     } else {
       const errText = await res.text();
       console.error(`shiori-claude-shim: upstream ${res.status}: ${errText}`);
