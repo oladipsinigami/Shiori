@@ -83,17 +83,15 @@ function bootstrapIdentity() {
 // We run this once at worker boot, before startOkxA2a(), so no daemon we manage
 // is running yet and we can never delete a live daemon's lock.
 function clearStaleDaemonLock() {
-  const lockDir = path.join(TASK_HOME, 'run', 'daemon.lock');
-  const pidFile = path.join(TASK_HOME, 'run', 'listener.pid');
-  for (const target of [lockDir, pidFile]) {
-    try {
-      if (fs.existsSync(target)) {
-        fs.rmSync(target, { recursive: true, force: true });
-        log('cleared stale daemon lock artifact:', target);
-      }
-    } catch (e) {
-      log('could not clear', target, '-', e.message);
+  const runDir = path.join(TASK_HOME, 'run');
+  try {
+    if (fs.existsSync(runDir)) {
+      fs.rmSync(runDir, { recursive: true, force: true });
+      log('cleared stale daemon run directory:', runDir);
     }
+    fs.mkdirSync(runDir, { recursive: true });
+  } catch (e) {
+    log('could not clear run dir', runDir, '-', e.message);
   }
 }
 

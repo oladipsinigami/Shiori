@@ -32,12 +32,22 @@ const logsDir = path.join(dataDir, 'logs');
 fs.mkdirSync(profilesDir, { recursive: true });
 fs.mkdirSync(logsDir, { recursive: true });
 
+function toSafeUserId(userId) {
+  return String(userId || 'user').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64) || 'user';
+}
+
 function loadOrCreateProfile(userId) {
-  const profilePath = path.join(profilesDir, `${userId}.json`);
+  const safeId = toSafeUserId(userId);
+  const profilePath = path.join(profilesDir, `${safeId}.json`);
   let profile;
   if (fs.existsSync(profilePath)) {
-    profile = JSON.parse(fs.readFileSync(profilePath, 'utf-8'));
-  } else {
+    try {
+      profile = JSON.parse(fs.readFileSync(profilePath, 'utf-8'));
+    } catch {
+      profile = null;
+    }
+  }
+  if (!profile) {
     profile = {
       user_id: userId,
       profile_status: 'empty',
@@ -50,12 +60,17 @@ function loadOrCreateProfile(userId) {
       },
       feedback_log: []
     };
-    fs.writeFileSync(profilePath, JSON.stringify(profile, null, 2));
+    try {
+      fs.writeFileSync(profilePath, JSON.stringify(profile, null, 2));
+    } catch (e) {
+      console.warn('[obito-core] Could not write profile file:', e.message);
+    }
   }
   return profile;
 }
 
 function logRecommendations(userId, text) {
+  const safeId = toSafeUserId(userId);
   const recRegex = /<!--\s*rec_id:\s*(rec-\S+?)\s*-->/g;
   const recIds = [];
   const newEntries = [];
@@ -77,10 +92,14 @@ function logRecommendations(userId, text) {
   }
 
   if (newEntries.length > 0) {
-    const logPath = path.join(logsDir, `${userId}-recs.json`);
-    const logs = fs.existsSync(logPath) ? JSON.parse(fs.readFileSync(logPath, 'utf-8')) : [];
-    logs.push(...newEntries);
-    fs.writeFileSync(logPath, JSON.stringify(logs, null, 2));
+    try {
+      const logPath = path.join(logsDir, `${safeId}-recs.json`);
+      const logs = fs.existsSync(logPath) ? JSON.parse(fs.readFileSync(logPath, 'utf-8')) : [];
+      logs.push(...newEntries);
+      fs.writeFileSync(logPath, JSON.stringify(logs, null, 2));
+    } catch (e) {
+      console.warn('[obito-core] Could not log recs:', e.message);
+    }
   }
 
   return recIds;

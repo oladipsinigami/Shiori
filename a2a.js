@@ -231,14 +231,19 @@ async function handleJsonRpc(body) {
   });
 
   try {
-    if (method === 'agent/getAuthenticatedExtendedCard' || method === 'agent/card') {
+    if (
+      method === 'agent/getAuthenticatedExtendedCard' ||
+      method === 'agent/card' ||
+      method === 'agent/get' ||
+      method === 'agent/info' ||
+      method === 'agentCard'
+    ) {
       return ok(agentCard());
     }
 
     if (method === 'message/send' || method === 'tasks/send') {
       const message = params.message || params;
-      const text = extractTextFromMessage(message);
-      if (!text) return fail(-32602, 'message text is required');
+      const text = extractTextFromMessage(message) || 'Please recommend 1-3 top movie, anime, or novel recommendations for me.';
       const userId = resolveUserId(params, message);
       const task = await runTask({
         userId,
